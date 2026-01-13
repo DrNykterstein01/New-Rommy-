@@ -1568,17 +1568,15 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 print(f" Mano del jugador... {jugador_local.playerHand}")
                 '''if roundOne:
                         players[0].playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
-                                                    Card("5","♥"),Card("6","♥"),Card("7","♥"),Card("8","♥"),Card("9","♥"),Card("10","♥"),
-                                                    Card("9","♦"), Card("9","♦"), 
-                                                    Card("9","♦"),Card("9","♦"),Card("Joker","", True), Card("9","♦"),Card("Joker","", True,)
-                                                    ]
+                                                    Card("5","♥"),Card("6","♥"),
+                                                    Card("9","♦"),Card("9","♦"),Card("9","♦"),Card("9","♦")]
                         round.hands[players[0].playerId] = players[0].playerHand   # Solo una carta para prueba,
                         players[1].playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
                                                     Card("5","♥"),Card("6","♥"),Card("7","♥"),Card("8","♥"),Card("9","♥"),Card("10","♥"),
                                                     Card("9","♦"), Card("9","♦"), 
                                                     Card("9","♦"),Card("9","♦"),Card("Joker","", True), Card("9","♦"),Card("Joker","", True,)
                                                     ]
-                        round.hands[players[1].playerId] = players[1].playerHand'''   # Solo una carta para prueba,
+                        round.hands[players[1].playerId] = players[1].playerHand   # Solo una carta para prueba,'''
                 '''if roundTwo:
                         jugador_local.playerHand = [Card("2","♥"), Card("3","♥"), Card("4","♥"), 
                                                 Card("5","♥"),
@@ -1586,12 +1584,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                                 Card("5","♠")]  # Solo una carta para prueba
                         round.hands[jugador_local.playerId] = jugador_local.playerHand'''
                 # --------------
-                '''if roundThree:
-                    jugador_local.playerHand = [Card("9","♥"), Card("9","♠"), Card("9","♦"), 
+                if roundThree:
+                    jugador_local.playerHand = [Card("9","♥"), Card("9","♠"), Card("9","♦"), Card("9","♦"),
                                                 Card("8","♥"), Card("8","♠"), Card("8","♦"), 
                                                 Card("7","♥"),Card("7","♦"),Card("7","♠")]  # Solo una carta para prueba
                     round.hands[jugador_local.playerId] = jugador_local.playerHand
-                if roundFour:
+                '''if roundFour:
                     jugador_local.playerHand = [Card("9","♥"), Card("9","♠"), Card("9","♦"), 
                                                 Card("8","♥"), Card("8","♠"), Card("8","♦"), 
                                                 Card("2","♥"), Card("3","♥"), Card("4","♥"), 
@@ -1981,11 +1979,16 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 # 1. Intentar levantar de las zonas de juego (Trios/Seguidillas)
                 # Excluimos el índice de descarte definido arriba
                 for idx_zona, stack in enumerate(zona_cartas):
-                    if idx_zona == idx_descarte: continue # No permitir sacar del descarte
-                    
+                    #if idx_zona == idx_descarte: continue # No permitir sacar del descarte
                     if stack:
-                        # Obtener el rect de la casilla visual
-                        nombre_casilla = mapping_nombres.get(fase, ["Trio", "Seguidilla"])[idx_zona] if idx_zona < len(mapping_nombres.get(fase, [])) else None
+                        # Obtener el nombre de la casilla para colisión
+                        nombres_fase = mapping_nombres.get(fase, ["Trio", "Seguidilla"])
+                        if idx_zona < len(nombres_fase):
+                            nombre_casilla = nombres_fase[idx_zona]
+                        else:
+                            # Si es el índice de descarte, usamos el nombre "Descarte"
+                            nombre_casilla = "Descarte"
+
                         rect_zona = cuadros_interactivos.get(nombre_casilla)
 
                         if rect_zona and rect_zona.collidepoint(mouse_x, mouse_y):
@@ -2506,7 +2509,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             if roundThree or roundFour:
                                     zona_cartas[2] = []
                                     zona_cartas[2].clear()'''
-                    elif nombre in ("Descarte", "Descartar"):
+                    elif nombre == "Descartar":
                             # Determinar la carta seleccionada (click sobre Carta_x) o usar la zona de arrastre (zona_cartas[2])
                             selected_card = None
                             for key, rect in cuadros_interactivos.items():
@@ -2529,8 +2532,70 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 continue
                             # Llama al método del jugador para descartar (se espera que devuelva lista de Card o None)
                             if not can_discard(jugador_local, selected_cards):
+                                
+                                if last_inserted_card_data is not None and len(jugador_local.playerHand) <= 1:
+                                    mensaje_temporal = "¡Inserción devuelta! No puedes cerrar con esa carta."
+                                    mensaje_tiempo = time.time()
+                                    
+                                    target_p = last_inserted_card_data['target_player']
+                                    idx_play = last_inserted_card_data['play_index']
+                                    card_to_remove = last_inserted_card_data['card']
+                                    
+                                    # 1. Buscar y remover la carta de la jugada lógica (playMade)
+                                    removed_successfully = False
+                                    if idx_play < len(target_p.playMade):
+                                        play_target = target_p.playMade[idx_play]
+                                        
+                                        # Determinar la lista real de cartas (maneja listas o diccionarios)
+                                        target_list = None
+                                        if isinstance(play_target, list):
+                                            target_list = play_target
+                                        elif isinstance(play_target, dict):
+                                            target_list = play_target.get("straight") or play_target.get("trio")
+                                            
+                                        if target_list is not None:
+                                            # Remover por valor/identidad
+                                            for i, c in enumerate(target_list):
+                                                if str(c) == str(card_to_remove):
+                                                    target_list.pop(i)
+                                                    removed_successfully = True
+                                                    break
+
+                                    if removed_successfully:
+                                        # 2. Devolver a la mano del jugador local
+                                        jugador_local.playerHand.append(card_to_remove)
+                                        
+                                        # 3. Limpiar visuales de la mesa del objetivo
+                                        # Forzamos que el objeto del jugador objetivo actualice sus strings visuales
+                                        if hasattr(target_p, "jugadas_bajadas"):
+                                            target_p.jugadas_bajadas[idx_play] = [str(c) for c in target_list]
+
+                                        # 4. Resetear estado de inserción
+                                        last_inserted_card_data = None
+                                        
+                                        # 5. Actualizar interfaz local
+                                        cartas_ocultas.clear()
+                                        zona_cartas[numero] = []
+                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
+
+                                        # 6. SINCRONIZAR RED: Avisar a todos que la inserción se canceló
+                                        msgRevertirInsert = {
+                                            "type": "INSERTAR_CARTA",
+                                            "playerHand": jugador_local.playerHand,
+                                            "jugadas_bajadas": target_p.jugadas_bajadas,
+                                            "playMade": target_p.playMade,
+                                            "playerId": target_p.playerId, # El dueño de la mesa
+                                            "playerId2": jugador_local.playerId, # El que recupera la carta
+                                            "round": round
+                                        }
+                                        if network_manager.is_host:
+                                            network_manager.broadcast_message(msgRevertirInsert)
+                                        else:
+                                            network_manager.sendData(msgRevertirInsert)
+                                            
+                                    continue # Salta el resto del proceso de descarte
                                 # Si se bajó en este turno y le queda 1 carta (la prohibida) o menos en mano
-                                if just_went_down_this_turn and len(jugador_local.playerHand) <= 1:
+                                elif just_went_down_this_turn and len(jugador_local.playerHand) <= 1:
                                     mensaje_temporal = "¡Jugada devuelta! No puedes cerrar con la carta que tomaste."
                                     mensaje_tiempo = time.time()
                                     
@@ -2578,67 +2643,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
                                 # CASO B: REVERTIR "INSERTAR CARTA"
                                 # Si insertó carta este turno y se quedó solo con la prohibida
-                                elif last_inserted_card_data is not None and len(jugador_local.playerHand) <= 1:
-                                    mensaje_temporal = "¡Inserción devuelta! No puedes cerrar con esa carta."
-                                    mensaje_tiempo = time.time()
-                                    
-                                    target_p = last_inserted_card_data['target_player']
-                                    idx_play = last_inserted_card_data['play_index']
-                                    card_inserted = last_inserted_card_data['card']
-                                    
-                                    # 1. Sacar la carta de la jugada del objetivo
-                                    # Necesitamos encontrar la carta en target_p.playMade[idx_play] y removerla
-                                    found_and_removed = False
-                                    play_target = target_p.playMade[idx_play]
-                                    
-                                    # Lógica para remover del playMade (lista o dict)
-                                    target_list = None
-                                    if isinstance(play_target, list):
-                                        target_list = play_target
-                                    elif isinstance(play_target, dict):
-                                        # Buscar en straight o trio
-                                        if "straight" in play_target and card_inserted in play_target["straight"]:
-                                            target_list = play_target["straight"]
-                                        elif "trio" in play_target and card_inserted in play_target["trio"]:
-                                            target_list = play_target["trio"]
-                                    
-                                    if target_list and card_inserted in target_list:
-                                        target_list.remove(card_inserted)
-                                        found_and_removed = True
-                                        
-                                        # Actualizar también jugadas_bajadas (visual)
-                                        # Nota: esto puede ser complejo de sincronizar exacto, 
-                                        # pero al enviar el mensaje de red se recalcula en los clientes.
-                                        pass 
-
-                                    if found_and_removed:
-                                        # 2. Devolver a mi mano
-                                        jugador_local.playerHand.append(card_inserted)
-                                        last_inserted_card_data = None # Reset
-                                        
-                                        # 3. Visuales
-                                        cartas_ocultas.clear()
-                                        zona_cartas[numero] = []
-                                        reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
-
-                                        # 4. SINCRONIZAR RED
-                                        # Reutilizamos INSERTAR_CARTA para actualizar el estado de ambos jugadores
-                                        msgRevertirInsert = {
-                                            "type": "INSERTAR_CARTA",
-                                            "playerHand": jugador_local.playerHand, # Mi mano recuperada
-                                            "jugadas_bajadas": target_p.jugadas_bajadas, # Visuales del target (se actualizarán solo)
-                                            "playMade": target_p.playMade,    # Lógica del target (ya sin la carta)
-                                            "playerId": target_p.playerId,    # ID del dueño de la jugada
-                                            "playerId2": jugador_local.playerId, # Mi ID
-                                            "round": round
-                                        }
-                                        if network_manager.is_host:
-                                            network_manager.broadcast_message(msgRevertirInsert)
-                                        else:
-                                            network_manager.sendData(msgRevertirInsert)
-                                        
-                                        continue
-                                
                                 # CASO C: Solo notificación (tiene más cartas)
                                 else:
                                     mensaje_temporal = "No puedes descartar la carta que acabas de tomar."
@@ -3175,6 +3179,13 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                     if intentado:
                                         mensaje_tiempo = time.time()
                                         insertado_en_jugada = True
+
+                                        last_inserted_card_data = {
+                                            'target_player': target_player,
+                                            'play_index': play_index_real,
+                                            'card': carta_obj,
+                                            'tipo': tipo # 'trio' o 'straight'
+                                        }
                                         
                                         if getattr(carta_obj, "joker", False):
                                             if target_player.playerId not in jokers_insertados_este_turno:
@@ -4516,39 +4527,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
         # Al final del while running, antes de pygame.display.flip(), agrega:
         # Mensaje temporal: blanco, más grande, wrap por palabra cada 35 caracteres y un poco más abajo
-        if mensaje_temporal and time.time() - mensaje_tiempo < 5:
-            def wrap_preserve_words(text, max_chars=35):
-                words = text.split()
-                if not words:
-                    return []
-                lines = []
-                cur = words[0]
-                for w in words[1:]:
-                    if len(cur) + 1 + len(w) <= max_chars:
-                        cur += " " + w
-                    else:
-                        lines.append(cur)
-                        cur = w
-                lines.append(cur)
-                return lines
-
-            font_msg = get_game_font(18) 
-            lines = wrap_preserve_words(mensaje_temporal, 35)
-            line_h = font_msg.get_linesize()
-            base_x = WIDTH // 2
-            base_y = HEIGHT // 2 + 160  
-            total_h = line_h * len(lines)
-            start_y = base_y - total_h // 2
-
-            for i, line in enumerate(lines):
-                surf = font_msg.render(line, True, (255, 255, 255))
-                rect = surf.get_rect(center=(base_x, start_y + i * line_h))
-                # borde negro alrededor (8 direcciones)
-                for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
-                    screen.blit(font_msg.render(line, True, ( (165, 42, 42))), (rect.x + dx, rect.y + dy))
-                screen.blit(surf, rect)
-        elif mensaje_temporal and time.time() - mensaje_tiempo >= 5:
-            mensaje_temporal = ""
+        
         # Dibujar siempre los textos "Ronda: X" y "Turno: N" dentro de sus cajas (sin PNGs)
         ronda_rect = cuadros_interactivos.get("Ronda")
         turno_rect = cuadros_interactivos.get("Turno")
@@ -5207,6 +5186,40 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     roundFour = False
                     roundOne = True
                 continue
+        
+        if mensaje_temporal and time.time() - mensaje_tiempo < 5:
+            def wrap_preserve_words(text, max_chars=35):
+                words = text.split()
+                if not words:
+                    return []
+                lines = []
+                cur = words[0]
+                for w in words[1:]:
+                    if len(cur) + 1 + len(w) <= max_chars:
+                        cur += " " + w
+                    else:
+                        lines.append(cur)
+                        cur = w
+                lines.append(cur)
+                return lines
+
+            font_msg = get_game_font(18) 
+            lines = wrap_preserve_words(mensaje_temporal, 35)
+            line_h = font_msg.get_linesize()
+            base_x = WIDTH // 2
+            base_y = HEIGHT // 2 + 160  
+            total_h = line_h * len(lines)
+            start_y = base_y - total_h // 2
+
+            for i, line in enumerate(lines):
+                surf = font_msg.render(line, True, (255, 255, 255))
+                rect = surf.get_rect(center=(base_x, start_y + i * line_h))
+                # borde negro alrededor (8 direcciones)
+                for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+                    screen.blit(font_msg.render(line, True, ( (165, 42, 42))), (rect.x + dx, rect.y + dy))
+                screen.blit(surf, rect)
+        elif mensaje_temporal and time.time() - mensaje_tiempo >= 5:
+            mensaje_temporal = ""
         pygame.display.flip()
         pygame.time.Clock().tick(60) # Esto mantiene el juego estable a 60 FPS
     return
@@ -5215,8 +5228,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
 def mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH, round_number=None):
     """
     Muestra un panel centrado que diga:
-      PUNTUACIONES FINALES
-      Ronda: <n>        (si round_number no es None)
+    PUNTUACIONES FINALES
+    Ronda: <n>        (si round_number no es None)
     y debajo, la lista de jugadores en el orden dado.
     Ajustes: mayor espaciado y mejor centrado para que no se corte abajo.
     """
@@ -5252,7 +5265,6 @@ def mostrar_puntuaciones_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS
     subtitle_font = get_game_font(18)
     player_font = get_game_font(22)
     info_font = get_game_font(12)
-
     center_x = x_rect + ancho_rect // 2
 
     # Título grande centrado (con borde para legibilidad)

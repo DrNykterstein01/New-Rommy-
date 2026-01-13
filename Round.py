@@ -9,6 +9,7 @@ class Round:
         self.tableDeck = [] #Esto será el mazo que estará en la mesa, donde se colocarán las cartas boca abajo que los jugadores podrán tomar
         self.discards = [] #Es el montón de descartes
         self.pile = []  # NUEVO PARA PRUEBA
+        self.refillCounter = 0 #Contador para llevar la cuenta de cuántas veces se ha rellenado el mazo
         #self.id = Round.idCounter
         #Round.idCounter += 1
 
