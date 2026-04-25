@@ -934,6 +934,22 @@ def main(manager_de_red): # <-- Acepta el manager de red
     inicio_sound = pygame.mixer.Sound(inicio_sound_path)
     inicio_sound.play()
 
+    # Cargar música de fondo para la partida (diferente a la del menú)
+    game_music_path = os.path.join(os.path.dirname(__file__), "assets", "sonido", "musica_juego.wav")
+    if not os.path.exists(game_music_path):
+        game_music_path = os.path.join(os.path.dirname(__file__), "assets", "sonido", "musica_juego.mp3")
+    if os.path.exists(game_music_path):
+        pygame.mixer.music.load(game_music_path)
+        pygame.mixer.music.play(-1)
+    else:
+        # Si no existe música de juego dedicada, usar la del menú
+        fallback_path = os.path.join(os.path.dirname(__file__), "assets", "sonido", "musica_fondo.wav")
+        if not os.path.exists(fallback_path):
+            fallback_path = os.path.join(os.path.dirname(__file__), "assets", "sonido", "musica_fondo.mp3")
+        if os.path.exists(fallback_path):
+            pygame.mixer.music.load(fallback_path)
+            pygame.mixer.music.play(-1)
+
     # Asignar toda la informacion del manager de red de ui.py
     network_manager = manager_de_red 
     
@@ -5051,9 +5067,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
             mensaje_temporal = ""
         
         ctrl_volumen.actualizar_y_dibujar()
-        
+
         pygame.display.flip()
         pygame.time.Clock().tick(60) # Esto mantiene el juego estable a 60 FPS
+
+    # Detener música del juego al salir
+    pygame.mixer.music.stop()
     return
 
 
