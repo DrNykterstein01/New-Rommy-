@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Entrenar Bot (Debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/train_selfplay.py",
+      "args": [
+        "--matches", "2",
+        "--players", "3"
+      ],
+      "console": "integratedTerminal"
+    }
+  ]
+}

@@ -207,7 +207,7 @@ class Player:
              return False
 
         # Si llegamos hasta aquí, la propuesta es válida.
-        print(f"¡Propuesta válida!: {[str(c) for c in lista]}")
+        #print(f"¡Propuesta válida!: {[str(c) for c in lista]}")
         return True
     
     def isValidStraightF(self, cards, max_jokers=2):
@@ -410,18 +410,18 @@ class Player:
         - As Mixto/Vuelta al mundo (A, 2, ... K, A) si hay 2 Ases.
         """
         if not cards or len(cards) < 4:
-            return False
+            return
 
         jokers = [c for c in cards if c.joker]
         naturals = [c for c in cards if not c.joker]
 
-        if len(jokers) > 2: return False
-        if not naturals: return False 
+        if len(jokers) > 2: return
+        if not naturals: return 
 
         # 1. Validar Palo
         first_suit = naturals[0].type
         if any(c.type != first_suit for c in naturals):
-            return False
+            return
 
         # --- Función para construir la secuencia ---
         def try_build(mode):
@@ -547,12 +547,13 @@ class Player:
             if s3: candidates.append(s3)
 
         if not candidates:
-            return False
+            return
 
         # --- Selección del Mejor Candidato ---
         best = candidates[0]
         for seq in candidates:
-            if seq == cards: return True # Orden original perfecto
+            if seq == cards: 
+                pass # Orden original perfecto
             
             # Preferencia: Joker al final
             if seq[-1].joker and not best[-1].joker:
@@ -654,13 +655,14 @@ class Player:
             self.jugadas_bajadas[playIndex] = list(cards)
 
     def insertCard(self, targetPlayer, targetPlayIndex, cardToInsert, position=None, jokerIndex = None):
+        #print(f"AL INSERTAR SE ESTÁ RECIBIENDO LO SIGUIENTE: \n jugador objetivo: {targetPlayer.playerName}, \n índice jugada objetivo: {targetPlayIndex}, \n cartas de la jugada objetivo: {[str(c) for c in targetPlayer.playMade[targetPlayIndex]]}, \n cartas de la otra jugada que no está siendo seleccionada: {[c for c in targetPlayer.playMade[0]] if targetPlayIndex == 1 else [c for c in targetPlayer.playMade[1]]} \n carta a insertar: {cardToInsert}, \n posición: {position}, \n índice de Joker (si aplica): {jokerIndex}")
         # 1) Validaciones básicas
         if not self.downHand:
             return False
         
         if not self.isHand:
             print(f"No es el turno de {self.playerName}")
-            # Opcional: retornar False o permitirlo si es compra
+            return False
         if not self.cardDrawn:
             return False
         if cardToInsert not in self.playerHand:
@@ -671,15 +673,25 @@ class Player:
 
         targetPlay = targetPlayer.playMade[targetPlayIndex]
         
-        # Helper para extraer la lista de cartas (sea dict o list)
+        # Helper para extraer la lista de cartas desde varios formatos de jugada.
         def _extract_list(play):
             if isinstance(play, dict):
                 return play.get("straight") or play.get("trio") or [], "straight" if "straight" in play else "trio"
-            # Lógica robusta: Si las dos primeras cartas normales tienen mismo valor, es trío
+
+            if isinstance(play, tuple):
+                # tupla de segmentos -> lista plana
+                if play and isinstance(play[0], list):
+                    play = [card for segment in play for card in segment]
+                else:
+                    play = list(play)
+
+            if isinstance(play, list) and play and isinstance(play[0], list):
+                play = [card for segment in play for card in segment]
+
             naturals = [c for c in play if not getattr(c, "joker", False)]
             if len(naturals) >= 2:
-                # Si todas las cartas naturales tienen el mismo valor, es un trío
-                if all(c.value == naturals[0].value for c in naturals):
+                first_val = getattr(naturals[0], "value", None)
+                if first_val is not None and all(getattr(c, "value", None) == first_val for c in naturals):
                     return play, "trio"
             return play, "straight"
         
@@ -765,7 +777,7 @@ class Player:
         Los puntos van de la siguiente manera:
         -Cartas del 2 al 9: 5 puntos cada una
         -Cartas 10, J, Q, K: 10 puntos cada una
-        -Cartas de Ases: 20 puntos
+        -Cartas de Ases: 15 puntos (antes tenía 20 puntos, por eso le sumaba 20pts en vez de 15pts, pero ahora lo cambié a 15pts)
         -Cartas Joker: 25 puntos"""
         totalPoints = 0
         for card in self.playerHand:
@@ -774,7 +786,7 @@ class Player:
             elif card.value in ["K", "Q", "J", "10"]:
                 totalPoints += 10
             elif card.value == "A":
-                totalPoints += 20
+                totalPoints += 15 #cambio a 15 puntos para los ases, antes era 20
             else:
                 totalPoints += 5 ### cambiar a 5 no se te olvide
         self.playerPoints += totalPoints
@@ -782,6 +794,25 @@ class Player:
             self.isSpectator = True
             print(f"Jugador {self.playerName} ha alcanzado {self.playerPoints} puntos y ahora es ESPECTADOR.")
         return totalPoints
+    def calculatePointsAI(self):
+        """Esto añade los puntos al jugador. Se debe llamar este método al finalizar cada ronda.
+        Los puntos van de la siguiente manera:
+        -Cartas del 2 al 9: 5 puntos cada una
+        -Cartas 10, J, Q, K: 10 puntos cada una
+        -Cartas de Ases: 15 puntos
+        -Cartas Joker: 25 puntos"""
+        totalPoints = 0
+        for card in self.playerHand:
+            if card.joker:
+                totalPoints += 25
+            elif card.value in ["K", "Q", "J", "10"]:
+                totalPoints += 10
+            elif card.value == "A":
+                totalPoints += 15
+            else:
+                totalPoints += 5 ### cambiar a 5 no se te olvide
+        return totalPoints
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -890,3 +921,4 @@ def ordenar_mano(player, modo, WIDTH=1200, BASE_Y=680):
 
     # ── Recalcular coordenadas Pygame
     recalcular_posiciones_mano(player, WIDTH=WIDTH, BASE_Y=BASE_Y)
+    

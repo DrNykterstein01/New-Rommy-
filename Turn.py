@@ -1,7 +1,8 @@
 from Deck import Deck
 def drawCard(player, roundPlayed, fromDiscards = False):
     print(f"drawCard called! Discards size: {len(roundPlayed.discards)}")
-    print(f"CARTAS DEL DESCARTE: {[str(c) for c in roundPlayed.discards]}")
+    print(f"Main Deck size: {len(roundPlayed.pile)}")
+    #print(f"CARTAS DEL DESCARTE: {[str(c) for c in roundPlayed.discards]}")
     if fromDiscards: #Si se indica que se quiere sacar una carta del montón de descartes y se proporciona un índice válido
         card = roundPlayed.discards.pop()  #Sacamos la carta del montón de descartes
         roundPlayed.hands[player.playerId].append(card)  #Añadimos la carta tomada a la mano del jugador
@@ -23,7 +24,7 @@ def discardCard(player, roundPlayed, card):
 
 def refillDeck(roundPlayed):
     print(f"---------------------------------------------------REFILL DECK CALLED! Pile size: {len(roundPlayed.pile)}, Discards size: {len(roundPlayed.discards)}")
-    if len(roundPlayed.pile) == 0 and len(roundPlayed.discards) == 1:
+    if len(roundPlayed.pile) == 0 and len(roundPlayed.discards) <= 1:
         roundPlayed.deck = Deck()
         roundPlayed.deck.shuffleCards()
         roundPlayed.pile = roundPlayed.deck.cards[:]

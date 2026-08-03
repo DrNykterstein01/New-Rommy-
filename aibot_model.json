@@ -1,0 +1,26 @@
+{
+  "strategy_weights": {
+    "aggressive": 0.4955401387512389,
+    "conservative": 0.30624380574826565,
+    "balanced": 0.19821605550049556
+  },
+  "learned_patterns": {
+    "optimal_plays": {},
+    "discard_strategy": {},
+    "card_values": {}
+  },
+  "games_played": 1,
+  "games_won": 0,
+  "win_rate": 0.0,
+  "game_history": [
+    {
+      "timestamp": "2026-08-02T19:29:43.958624",
+      "result": {
+        "win": false,
+        "points_gained": 200,
+        "timestamp": "2026-08-02T19:29:25.163669"
+      },
+      "win_rate": 0.0
+    }
+  ]
+}

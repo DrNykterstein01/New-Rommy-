@@ -1,0 +1,49 @@
+{
+  "total_games": 1,
+  "total_bots": 2,
+  "timestamp": "2026-08-02T19:29:44.082956",
+  "bot_statistics": [
+    {
+      "name": "AIBot_0",
+      "games_played": 1,
+      "games_won": 0,
+      "win_rate": 0.0,
+      "strategy_weights": {
+        "aggressive": 0.4955401387512389,
+        "conservative": 0.30624380574826565,
+        "balanced": 0.19821605550049556
+      }
+    },
+    {
+      "name": "AIBot_1",
+      "games_played": 1,
+      "games_won": 1,
+      "win_rate": 1.0,
+      "strategy_weights": {
+        "aggressive": 0.5102040816326531,
+        "conservative": 0.2915451895043732,
+        "balanced": 0.1982507288629738
+      }
+    }
+  ],
+  "training_history_sample": [
+    {
+      "timestamp": "2026-08-02T19:29:25.163669",
+      "bot_stats": {
+        "AIBot_0": {
+          "hand_size": 32,
+          "points": 200,
+          "win": false
+        },
+        "AIBot_1": {
+          "hand_size": 7,
+          "points": 45,
+          "win": true
+        }
+      },
+      "game_details": {
+        "winner": "AIBot_1"
+      }
+    }
+  ]
+}
