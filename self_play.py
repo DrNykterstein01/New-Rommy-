@@ -62,7 +62,7 @@ class SelfPlayTrainer:
                  opponent_pool_size=0,
                  opponent_refresh_every=50,
                  opponent_use_prob=0.3,
-                 max_turns_per_match=1500,
+                 max_turns_per_match=2500,
                  seed=None):
         if torch is None:
             raise RuntimeError(
@@ -230,7 +230,12 @@ class SelfPlayTrainer:
         # contemplado: cada turno real implica varias llamadas a step()
         # (robar / bajarse / descartar), así que damos bastante margen por
         # encima del límite de turnos que ya aplica RummyEnv internamente.
-        safety_cap = self.max_turns_per_match * 4
+        safety_cap = self.max_turns_per_match * 6
+
+        print(f"\n{'='*70}")
+        print(f"[NUEVA PARTIDA #{self.matches_played + 1}] {self.num_players} jugadores | "
+              f"límite de turnos: {self.max_turns_per_match} | asientos congelados: {list(frozen_seats.keys()) or 'ninguno'}")
+        print(f"{'='*70}")
 
         while not done and turns_taken < safety_cap:
             seat_idx = env.current_player_index
@@ -257,7 +262,23 @@ class SelfPlayTrainer:
             state = next_state
             turns_taken += 1
 
-        winner = next((p for p in self.bots if p.winner), None)
+        # OJO: player.winner se marca cada vez que alguien gana una RONDA
+        # (rummy_env.py líneas ~82/97/209/590) y nunca se limpia entre rondas
+        # dentro de la misma partida. Por eso NO sirve para saber quién ganó
+        # la partida completa: si SelfPlayBot_0 ganó la primera ronda, esa
+        # bandera se le queda pegada aunque después sea eliminado. El ganador
+        # real de la partida es, simplemente, el único jugador que sigue sin
+        # estar eliminado (isSpectator=False) cuando la partida termina. Si
+        # la partida se cortó por timeout o por el safety_cap, sigue habiendo
+        # más de un jugador activo, así que no hay ganador (None).
+        active_players = [p for p in self.bots if not p.isSpectator]
+        winner = active_players[0] if len(active_players) == 1 else None
+        if turns_taken >= safety_cap and not done:
+            print(f"[SAFETY CAP] Partida cortada por el propio SelfPlayTrainer tras {turns_taken} pasos "
+                  f"(no debería pasar seguido; si ocurre a menudo, algo sigue atascado).")
+        print(f"[FIN PARTIDA #{self.matches_played + 1}] Ganador: {winner.playerName if winner else '(nadie - cortada)'} "
+              f"| pasos: {turns_taken}\n{'='*70}")
+
         self.history.append({
             'match': self.matches_played + 1,
             'steps': turns_taken,

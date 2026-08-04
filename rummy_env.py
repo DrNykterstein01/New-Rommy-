@@ -8,15 +8,11 @@ class RummyEnv:
     # Action index is reused across phases.
     # phase 0 (draw): 0=discard, 1=deck, 2=deck fallback
     # phase 1 (play/down): 0=attempt bajar, 1=pass, 2=pass
+    #   (si el jugador ya se bajó esta ronda, la fase 1 ignora la acción y
+    #    en vez de eso intenta insertar automáticamente todas las cartas
+    #    posibles en jugadas de la mesa - ver _apply_play)
     # phase 2 (discard): 0=low discard, 1=high discard, 2=burn joker if possible
-    # Expanded action space: base 3 actions + encoded insertion actions
-    # Base actions (0-2) kept for backward compatibility.
-    # Insertion actions are encoded as: 3 + (play_idx * MAX_HAND_SLOTS * POS_COUNT) + (hand_slot * POS_COUNT) + pos
-    # where pos: 0=start, 1=end
-    MAX_TABLE_PLAYS = 8
-    MAX_HAND_SLOTS = 13
-    POS_COUNT = 2
-    ACTION_SPACE = 3 + (MAX_TABLE_PLAYS * MAX_HAND_SLOTS * POS_COUNT)
+    ACTION_SPACE = 3
     PHASE_DRAW = 0
     PHASE_PLAY = 1
     PHASE_DISCARD = 2
@@ -48,6 +44,8 @@ class RummyEnv:
             player.playMade = []
             player.jugadas_bajadas = []
             player.current_round = self.round_number
+            if hasattr(player, 'purchase_count'):
+                player.purchase_count = 0
 
         self.round.initDeck()
         self.round.dealCards()
@@ -69,6 +67,10 @@ class RummyEnv:
 
         reward = 0.0
         if self.turn_phase == 0:
+            # "isHand" marca a quién le toca jugar en este momento; Player.insertCard()
+            # lo exige para permitir inserciones. Game.py lo activa en su propio ciclo,
+            # pero aquí hay que hacerlo explícitamente al empezar el turno.
+            player.isHand = True
             reward += self._apply_draw(player, action)
             self.turn_phase = 1
             next_state = self._build_observation()
@@ -98,11 +100,12 @@ class RummyEnv:
                     reward += 1.0
                     return self._build_observation(), reward, True, {'phase': 2, 'win': True}
                 if round_done:
-                    return self._build_observation(), reward + 0.5, False, {'phase': 2, 'round_end': True, 'round_winner': player.playerName, 'new_round': self.round_number + 1 if self.round_number < 4 else 1}
+                    return self._build_observation(), reward + 0.5, False, {'phase': 2, 'round_end': True, 'round_winner': player.playerName, 'new_round': self.round_number}
 
             if self.turn_count >= self.max_turns:
                 self.done = True
-                return self._build_observation(), reward - 1.0, True, {'phase': 2, 'win': False}
+                print(f"\n[MATCH TIMEOUT] Se alcanzó el límite de {self.max_turns} turnos sin que nadie ganara la ronda {self.round_number}. Partida cortada.")
+                return self._build_observation(), reward - 1.0, True, {'phase': 2, 'win': False, 'timeout': True}
 
             self._advance_player()
             self._simulate_until_rl_turn()
@@ -122,12 +125,24 @@ class RummyEnv:
         discard_top = self.round.discards[-1] if self.round.discards else None
         if action == 0:
             if discard_top:
+                # OJO: antes esto devolvía un +0.15 FIJO sin importar qué tan
+                # útil fuera la carta, mientras que tomar del mazo daba -0.05
+                # o 0.0. Eso le enseñaba a la política "toma SIEMPRE del
+                # descarte, sin importar la carta" -porque garantizaba más
+                # recompensa que el mazo-, lo cual producía el ciclo de
+                # tomar-y-tirar la misma carta una y otra vez (cada ciclo
+                # seguía "farmeando" ese bono fijo). Ahora la recompensa
+                # depende de qué tan útil es realmente la carta para la mano
+                # actual, así que tomar un descarte inútil queda peor que
+                # tomar del mazo, y el mazo vuelve a ser una opción real.
+                usefulness = player._evaluate_card_usefulness(discard_top)
+                reward = -0.15 + 0.4 * usefulness  # rango aprox.: -0.15 (inútil) a +0.25 (muy útil)
                 drawCard(player, self.round, fromDiscards=True)
                 player.playerHand = self.round.hands[player.playerId]
                 player.cardDrawn = True
                 print(f"[TURN] Ronda {self.round_number} | \n Jugador {player.playerName} tomó DEL DESCARTE: {discard_top}")
                 print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
-                return 0.15
+                return reward
             if len(self.round.pile) == 0:
                 refillDeck(self.round)
             drawCard(player, self.round)
@@ -135,7 +150,7 @@ class RummyEnv:
             player.cardDrawn = True
             print(f"[TURN] Ronda {self.round_number} | \n Jugador {player.playerName} tomó DEL MAZO")
             print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
-            return -0.05
+            return 0.0
 
         if len(self.round.pile) == 0:
             refillDeck(self.round)
@@ -153,15 +168,22 @@ class RummyEnv:
         if discard_top is None:
             return False
 
+        discarder_id = getattr(discard_top, 'discarded_by', None)
+
         num_players = len(self.players)
         for i in range(1, num_players):
             buyer = self.players[(self.current_player_index + i) % num_players]
             if buyer.isSpectator:
                 continue
+            if discarder_id is not None and buyer.playerId == discarder_id:
+                # Regla explícita: un jugador no puede comprar la carta que
+                # él mismo acaba de descartar.
+                continue
             buyer.playerBuy = buyer.decide_buy_card(discard_top, buyer.calculatePointsAI(), self.players)
             if buyer.playerBuy:
                 buyer.buyCard(self.round)
                 buyer.playerBuy = False
+                print(f"[COMPRA] {buyer.playerName} compró el descarte {discard_top} (+carta de castigo) | Mano ahora: {[str(c) for c in buyer.playerHand]}")
                 return True
 
         return False
@@ -170,63 +192,45 @@ class RummyEnv:
         if not player.cardDrawn:
             return -0.3
 
-        if player.downHand and action >= 3:
-            table = self._collect_table_plays()
-            base = 3
-            rel = action - base
-            per_play = self.MAX_HAND_SLOTS * self.POS_COUNT
-            play_idx_rel = rel // per_play
-            rem = rel % per_play
-            hand_slot = rem // self.POS_COUNT
-            pos_idx = rem % self.POS_COUNT
-
-            if play_idx_rel < 0 or play_idx_rel >= len(table):
-                return -0.2
-
-            target = table[play_idx_rel]
-            target_player = target['owner']
-            target_index = target['play_index']
-
-            if hand_slot < 0 or hand_slot >= len(player.playerHand):
-                return -0.2
-            card_to_insert = player.playerHand[hand_slot]
-            position = 'start' if pos_idx == 0 else 'end'
-
-            succeeded = player.insertCard(target_player, target_index, card_to_insert, position)
-            if succeeded:
-                print(f"[INSERT] Jugador {player.playerName} insertó {card_to_insert} en la jugada de {target_player.playerName} (idx {target_index}) en ronda {self.round_number}")
-                if len(player.playerHand) == 0:
-                    player.winner = True
-                    round_done = self._handle_round_completion(player)
-                    return 0.5 if round_done else 0.1
-                return 0.1
-            return -0.2
-
-        if action == 0:
-            if player.downHand:
+        if player.downHand:
+            # Ya se bajó esta ronda (solo se puede bajar una vez). La única
+            # forma de seguir vaciando la mano es insertando en jugadas de la
+            # mesa. Esto se intenta automáticamente cada turno -en bucle,
+            # insertando tantas cartas válidas como sea posible- en vez de
+            # depender de que la política de RL "adivine" la acción correcta
+            # entre un espacio de acciones enorme (eso fue lo que hacía que
+            # casi nunca insertaran nada en la práctica).
+            reward = 0.0
+            max_attempts = len(player.playerHand) + 1  # cota de seguridad
+            for _ in range(max_attempts):
                 table = self._collect_table_plays()
                 insertion = player.decide_insert_card([p['play'] for p in table])
                 if not insertion:
-                    return 0.0
+                    break
 
                 play_idx_rel, card_to_insert, position = insertion
                 if play_idx_rel < 0 or play_idx_rel >= len(table):
-                    return -0.2
+                    break
 
                 target = table[play_idx_rel]
                 target_player = target['owner']
                 target_index = target['play_index']
 
                 succeeded = player.insertCard(target_player, target_index, card_to_insert, position)
-                if succeeded:
-                    print(f"[INSERT] Jugador {player.playerName} insertó {card_to_insert} en la jugada de {target_player.playerName} (idx {target_index}) en ronda {self.round_number}")
-                    if len(player.playerHand) == 0:
-                        player.winner = True
-                        round_done = self._handle_round_completion(player)
-                        return 0.5 if round_done else 0.1
-                    return 0.1
-                return -0.2
+                if not succeeded:
+                    break
 
+                print(f"[INSERT] Jugador {player.playerName} insertó {card_to_insert} en la jugada de {target_player.playerName} (idx {target_index}) en ronda {self.round_number}")
+                reward += 0.1
+
+                if len(player.playerHand) == 0:
+                    player.winner = True
+                    round_done = self._handle_round_completion(player)
+                    return reward + (0.5 if round_done else 0.0)
+
+            return reward
+
+        if action == 0:
             play = player.decide_play_cards(self.round_number)
             if not play:
                 return -0.4
@@ -246,8 +250,6 @@ class RummyEnv:
         # Passing is valid, but if a valid bajar play exists then it should be penalized.
         if player.decide_play_cards(self.round_number):
             return -0.15
-        return 0.0
-
         return 0.0
 
     def _execute_play(self, player, play):
@@ -339,11 +341,17 @@ class RummyEnv:
         if not player.cardDrawn:
             return -0.2
 
+        # Round 4: protect cards that are part of the best partial play so the
+        # bot doesn't dismantle its own near-complete combination.
+        protected = set()
+        if self.round_number == 4 and not player.downHand:
+            protected = player._get_partial_play_cards()
+
         if action == 0:
-            card = self._choose_lowest_discard(player)
+            card = self._choose_lowest_discard(player, protected=protected)
             base_reward = -0.02
         elif action == 1:
-            card = self._choose_highest_discard(player)
+            card = self._choose_highest_discard(player, protected=protected)
             base_reward = 0.0
         elif action == 2:
             if player.downHand:
@@ -353,17 +361,20 @@ class RummyEnv:
                     if pair_card:
                         self._discard_cards(player, [joker_card, pair_card])
                         return 0.10
-                card = self._choose_lowest_discard(player)
+                card = self._choose_lowest_discard(player, protected=protected)
                 base_reward = -0.05
             else:
-                card = self._choose_lowest_discard(player)
+                card = self._choose_lowest_discard(player, protected=protected)
                 base_reward = -0.2
         else:
-            card = self._choose_lowest_discard(player)
+            card = self._choose_lowest_discard(player, protected=protected)
             base_reward = -0.05
 
         if card is None:
-            return -0.2
+            # No unprotected card available; fall back to any card.
+            card = self._choose_lowest_discard(player)
+            if card is None:
+                return -0.2
 
         if getattr(card, 'joker', False) and not player.downHand:
             card = self._choose_lowest_discard(player, exclude_jokers=True)
@@ -377,21 +388,38 @@ class RummyEnv:
                 return 0.10
 
         self._discard_cards(player, [card])
-        return base_reward - 0.01 * len(player.playerHand)
 
-    def _choose_lowest_discard(self, player, exclude_jokers=False, include_only_jokers=False):
+        # Reward shaping for round 4: reward discarding cards NOT in partial play.
+        shape = 0.0
+        if self.round_number == 4 and not player.downHand and protected:
+            if card not in protected:
+                shape = 0.05
+            else:
+                shape = -0.08
+
+        return base_reward - 0.01 * len(player.playerHand) + shape
+
+    def _choose_lowest_discard(self, player, exclude_jokers=False, include_only_jokers=False, protected=None):
         if include_only_jokers:
             candidates = [c for c in player.playerHand if c.joker]
         else:
             candidates = [c for c in player.playerHand if not exclude_jokers or not c.joker]
+        if protected:
+            unprotected = [c for c in candidates if c not in protected]
+            if unprotected:
+                candidates = unprotected
         if not candidates:
             return None
         return min(candidates, key=self._card_value_for_discard)
 
-    def _choose_highest_discard(self, player):
+    def _choose_highest_discard(self, player, protected=None):
         candidates = [c for c in player.playerHand if not c.joker]
         if not candidates:
             candidates = player.playerHand[:]
+        if protected:
+            unprotected = [c for c in candidates if c not in protected]
+            if unprotected:
+                candidates = unprotected
         if not candidates:
             return None
         return max(candidates, key=self._card_value_for_discard)
@@ -446,6 +474,8 @@ class RummyEnv:
             player.playMade = []
             player.jugadas_bajadas = []
             player.current_round = self.round_number
+            if hasattr(player, 'purchase_count'):
+                player.purchase_count = 0
 
         self.round = Round(self.players)
         self.round.initDeck()
@@ -458,30 +488,36 @@ class RummyEnv:
     def _handle_round_completion(self, winner):
         if winner is None:
             return False
-        print(f"[ROUND END] Ganador de ronda: {winner.playerName}")
+
+        print(f"\n{'-'*70}")
+        print(f"[FIN DE RONDA {self.round_number}] Ganador: {winner.playerName} (puntos actuales: {winner.playerPoints})")
+
         eliminated = []
         for player in self.players:
             if player is winner or player.isSpectator:
                 continue
             pts = player.calculatePoints()
-            print(f"[SCORES] Jugador {player.playerName} sumó {pts} puntos -> Total: {player.playerPoints}")
+            print(f"[PUNTOS] {player.playerName} sumó {pts} puntos -> Total: {player.playerPoints}")
             if player.playerPoints >= self.target_points:
                 eliminated.append(player)
 
         if eliminated:
             for p in eliminated:
                 p.isSpectator = True
-                print(f"[ELIMINATED] Jugador {p.playerName} eliminado con {p.playerPoints} puntos")
+                print(f"[ELIMINADO] {p.playerName} queda eliminado con {p.playerPoints} puntos")
         else:
-            print("[ELIMINATION] No se eliminó a ningún jugador en esta ronda")
+            print("[ELIMINACION] No se eliminó a ningún jugador en esta ronda")
 
         if self._is_match_over():
             self.done = True
+            print(f"[FIN DE PARTIDA] {winner.playerName} es el ganador definitivo de la partida.")
+            print(f"{'-'*70}\n")
             return True
 
         # advance to next round number and prepare tables
         self.round_number = 1 if self.round_number == 4 else self.round_number + 1
-        print(f"[NEXT ROUND] Iniciando ronda {self.round_number}...")
+        print(f"[SIGUIENTE RONDA] Iniciando ronda {self.round_number}...")
+        print(f"{'-'*70}\n")
         self._prepare_new_round()
         return True
 
@@ -519,6 +555,7 @@ class RummyEnv:
         if player.isSpectator:
             return
 
+        player.isHand = True
         # Turn header for debugging
         discard_top = self.round.discards[-1] if self.round.discards else None
         print(f"\n[TURN] Ronda {self.round_number} | Jugador en turno: {player.playerName} | Tope descarte: {discard_top}")

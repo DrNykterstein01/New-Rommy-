@@ -67,6 +67,7 @@ class AIBot(Player):
         self.win_rate = 0.0
         self.games_played = 0
         self.games_won = 0
+        self.purchase_count = 0
 
         self.rl_enabled = False
         self.rl_state_dim = 0
@@ -203,6 +204,10 @@ class AIBot(Player):
         return action
 
     # ---------------------- RL action / insertion mapping ---------------------
+    # NOTA: estos dos métodos ya no se usan en el flujo activo (la inserción
+    # ahora es automática, ver RummyEnv._apply_play). Se dejan por si en el
+    # futuro se quiere volver a experimentar con inserciones como decisión
+    # explícita de RL.
     def encode_insertion_action(self, play_idx, hand_slot, pos):
         """Encodes an insertion choice to a single integer RL action.
 
@@ -227,19 +232,14 @@ class AIBot(Player):
         return int(play_idx), int(hand_slot), int(pos)
 
     def _rl_allowed_actions(self, phase, player):
-        """Return allowed RL action indices for the current phase and player state."""
-        if phase is None:
-            return list(range(self.rl_action_dim))
+        """Return allowed RL action indices for the current phase and player state.
 
-        if phase == self.PHASE_DRAW or phase == self.PHASE_DISCARD:
-            return [0, 1, 2]
-
-        if phase == self.PHASE_PLAY:
-            if player is None or not getattr(player, 'downHand', False):
-                return [0, 1, 2]
-            # When already down, allow insertion decisions as well.
-            return [0, 1, 2] + list(range(3, self.rl_action_dim))
-
+        Nota: la inserción de cartas (cuando el jugador ya se bajó) ya NO se
+        decide como una acción de RL — se ejecuta automáticamente en
+        RummyEnv._apply_play(). Antes existía un espacio de acciones mucho
+        más grande para codificar inserciones explícitas, pero eso diluía
+        tanto la exploración que la red casi nunca llegaba a intentarlas.
+        """
         return [0, 1, 2]
 
     def rl_record_draw_transition(self, next_state, reward=0.0, done=False):
@@ -371,6 +371,21 @@ class AIBot(Player):
         if not valid_plays:
             return None
 
+        # Round 4 requires using ALL cards. Partial plays are only used to
+        # guide discarding — they must NOT be played as a bajar attempt.
+        if round_number == 4:
+            full_plays = []
+            for play in valid_plays:
+                if isinstance(play, tuple):
+                    total = sum(len(p) for p in play)
+                else:
+                    total = len(play)
+                if total == len(self.playerHand):
+                    full_plays.append(play)
+            if not full_plays:
+                return None
+            valid_plays = full_plays
+
         best_play = self._select_best_play(valid_plays, round_number)
         return best_play
 
@@ -396,6 +411,27 @@ class AIBot(Player):
             round_ctx = None
 
         if round_ctx and not self.downHand:
+            # Round 4: use partial play to protect cards that are part of the
+            # best partial combination (2 trios + 1 sequence, even if incomplete).
+            # Discard from the cards NOT in the partial play first.
+            if round_ctx == 4:
+                protected = self._get_partial_play_cards()
+                if protected:
+                    candidates = [c for c in self.playerHand if c not in protected]
+                    if candidates:
+                        card_values = self._calculate_card_values()
+                        worst_card = min(candidates, key=lambda c: card_values.get(c, 0))
+                        return worst_card
+                    # All cards are in the partial play but we still can't bajar:
+                    # discard the lowest-value card from the smallest group.
+                    partial = self._find_best_partial_play()
+                    if partial:
+                        smallest = min(partial, key=len)
+                        if smallest:
+                            card_values = self._calculate_card_values()
+                            worst_card = min(smallest, key=lambda c: card_values.get(c, 0))
+                            return worst_card
+
             valid_plays = self._find_valid_plays(round_ctx)
             if valid_plays:
                 best = self._select_best_play(valid_plays, round_ctx)
@@ -423,6 +459,14 @@ class AIBot(Player):
         if not discard_card:
             return False
 
+        # Válvula de seguridad dura: comprar entrega SIEMPRE una carta extra
+        # de castigo, así que sin importar qué tan "completa" parezca la
+        # mano, no tiene sentido seguir comprando si ya se acumularon
+        # demasiadas cartas (empezamos con 10; más allá de esto el riesgo de
+        # quedar con una mano imposible de vaciar supera cualquier beneficio).
+        if len(self.playerHand) >= 16:
+            return False
+
         usefulness = self._evaluate_card_usefulness(discard_card)
         current_hand_score = sum(self._get_card_point_value(c) for c in self.playerHand)
         completion = self._evaluate_hand_completion()
@@ -434,8 +478,20 @@ class AIBot(Player):
             return False
 
         # Ronda 4 es especialmente sensible: necesitas usar TODAS las cartas.
+        # Si la carta del descarte pertenece a la jugada parcial, conviene comprar.
         if self.current_round == 4 and not self.downHand:
-            return usefulness > 0.75
+            partial = self._get_partial_play_cards()
+            if discard_card in partial:
+                return True
+            if self.purchase_count >= 2:
+                return False
+            if len(self.playerHand) >= 14:
+                return False
+            if len(self.playerHand) >= 12:
+                return usefulness > 0.9 and completion >= 0.65
+            if len(self.playerHand) >= 10:
+                return usefulness > 0.75 and completion >= 0.45
+            return usefulness > 0.7
 
         if current_hand_score > 200:
             return usefulness > 0.4
@@ -472,7 +528,11 @@ class AIBot(Player):
         """
         Decides which card to insert into existing plays.
         This is a key strategy: inserting cards reduces hand size without initial play.
-        Returns (play_index, card_to_insert, position) or None
+        Returns (play_index, card_to_insert, position) or None.
+
+        position siempre es la cadena "start" o "end" (insertCard() espera
+        exactamente eso; para un trío la posición no cambia la validez de la
+        jugada, así que usamos "end").
         """
         if not self.downHand:
             return None
@@ -481,9 +541,19 @@ class AIBot(Player):
         best_score = -1
 
         for play_idx, play in enumerate(plays_in_table):
+            play_type = self._get_play_type(play)
             for card in self.playerHand:
-                insertion_positions = self._get_insertion_positions(card, play)
-                for position in insertion_positions:
+                if play_type == 'sequence':
+                    candidate_positions = self._get_insertion_positions(card, play)
+                elif play_type == 'trio':
+                    candidate_positions = ["end"] if self._can_insert_into_trio(card, play) is not None else []
+                else:
+                    # Jugada 'mixed' o no reconocida: no debería ocurrir para
+                    # algo que ya está bajado en la mesa, pero por seguridad
+                    # simplemente no se intenta insertar ahí.
+                    candidate_positions = []
+
+                for position in candidate_positions:
                     insertion_score = self._score_insertion(card, play, play_idx)
                     if card.joker:
                         # A Joker is worth 25 points, so dispose of it whenever
@@ -666,32 +736,177 @@ class AIBot(Player):
             combinations = self._combine_plays(trios, [], min_trios=3)
         elif round_number == 4:
             combinations = self._combine_plays(trios, sequences, min_trios=2, min_sequences=1, use_all=True)
+            if not combinations:
+                partial = self._find_best_partial_play()
+                if partial:
+                    combinations = [partial]
         else:
             combinations = []
 
         return combinations
 
+    def _find_best_partial_play(self):
+        """
+        Para la ronda 4: si no existe una bajada completa (2 tríos + 1 seguidilla
+        que use TODAS las cartas), busca la mejor combinación parcial: el conjunto
+        de 2 tríos + 1 seguidilla (sin compartir cartas) que use la mayor cantidad
+        de cartas posible. Esto guía la decisión de descarte: las cartas que NO
+        pertenecen a la jugada parcial son las que se descartan primero.
+
+        Retorna una tupla de jugadas (cada una una lista de Card) o None.
+        """
+        trios = self._find_all_trios()
+        sequences = self._find_all_sequences()
+
+        if not trios or not sequences:
+            return None
+
+        best_play = None
+        best_card_count = 0
+        hand_size = len(self.playerHand)
+
+        def trio_value(t):
+            return next((c.value for c in t if not c.joker), None)
+
+        def cards_overlap(group_a, group_b):
+            return len({c for play in group_a for c in play} & {c for play in group_b for c in play}) > 0
+
+        for i, trio1 in enumerate(trios):
+            for j, trio2 in enumerate(trios):
+                if i == j:
+                    continue
+                if trio_value(trio1) == trio_value(trio2):
+                    continue
+                if cards_overlap([trio1], [trio2]):
+                    continue
+                for seq in sequences:
+                    if cards_overlap([trio1, trio2], [seq]):
+                        continue
+                    used = list(trio1) + list(trio2) + list(seq)
+                    count = len(used)
+                    if count > best_card_count and count <= hand_size:
+                        best_card_count = count
+                        best_play = (trio1, trio2, seq)
+
+        if best_play is None:
+            best_play = self._find_best_two_group_play(trios, sequences, hand_size)
+
+        return best_play
+
+    def _find_best_two_group_play(self, trios, sequences, hand_size):
+        """
+        Si no se encuentran 2 tríos + 1 seguidilla sin solaparse, busca la mejor
+        combinación de 2 grupos cualesquiera (2 tríos, 2 seguidillas, o 1 trío +
+        1 seguidilla) que use la mayor cantidad de cartas sin solaparse.
+        """
+        best_play = None
+        best_card_count = 0
+
+        def cards_overlap(group_a, group_b):
+            return len({c for play in group_a for c in play} & {c for play in group_b for c in play}) > 0
+
+        all_groups = [(g, 'trio') for g in trios] + [(g, 'seq') for g in sequences]
+
+        for i in range(len(all_groups)):
+            for j in range(i + 1, len(all_groups)):
+                g1, t1 = all_groups[i]
+                g2, t2 = all_groups[j]
+                if cards_overlap([g1], [g2]):
+                    continue
+                if t1 == 'trio' and t2 == 'trio':
+                    v1 = next((c.value for c in g1 if not c.joker), None)
+                    v2 = next((c.value for c in g2 if not c.joker), None)
+                    if v1 == v2:
+                        continue
+                used = list(g1) + list(g2)
+                count = len(used)
+                if count > best_card_count and count <= hand_size:
+                    best_card_count = count
+                    if t1 == 'trio' and t2 == 'trio':
+                        best_play = (g1, g2, [])
+                    elif t1 == 'seq' and t2 == 'seq':
+                        best_play = ([], g1, g2) if False else (g1, g2, [])
+                    else:
+                        if t1 == 'trio':
+                            best_play = (g1, [], g2)
+                        else:
+                            best_play = (g2, [], g1)
+
+        if best_play is None:
+            best_play = self._find_best_single_group_play(trios, sequences, hand_size)
+
+        return best_play
+
+    def _find_best_single_group_play(self, trios, sequences, hand_size):
+        """
+        Último recurso: si no hay dos grupos sin solaparse, retorna el grupo
+        individual más grande (trío o seguidilla) que use más cartas.
+        """
+        best_play = None
+        best_card_count = 0
+
+        all_groups = trios + sequences
+
+        for g in all_groups:
+            count = len(g)
+            if count > best_card_count and count <= hand_size:
+                best_card_count = count
+                is_trio = len({c.value for c in g if not c.joker}) == 1
+                if is_trio:
+                    best_play = (g, [], [])
+                else:
+                    best_play = (g, [], [])
+
+        return best_play
+
+    def _get_partial_play_cards(self):
+        """
+        Retorna el conjunto de cartas que pertenecen a la mejor jugada parcial
+        de ronda 4. Si no hay jugada parcial, retorna un conjunto vacío.
+        """
+        if self.current_round != 4 or self.downHand:
+            return set()
+        partial = self._find_best_partial_play()
+        if not partial:
+            return set()
+        return {c for play in partial for c in play}
+
     def _find_all_trios(self):
         """
         Finds all valid trios in current hand, including combinations that use one joker.
+
+        El juego usa 2 mazos completos (Round.initDeck), así que puede haber
+        cartas EXACTAMENTE duplicadas (p. ej. dos 7♣) en la mano. Antes esto
+        se enumeraba con itertools.combinations probando TODOS los tamaños de
+        grupo posibles, lo cual escala mal cuando un bot acumula muchas
+        cartas del mismo valor (comprando sin bajarse). Aquí solo se prueban
+        el tamaño mínimo (3) y el tamaño completo del grupo disponible, que
+        alcanza para que la heurística sepa "hay un trío" y "cuál es el
+        trío más grande posible", sin la explosión combinatoria.
         """
         trios = []
         natural_cards = [c for c in self.playerHand if not c.joker]
         joker_cards = [c for c in self.playerHand if c.joker]
 
-        # Group natural cards by value and generate valid trios using at most one joker.
         value_groups = {}
         for card in natural_cards:
             value_groups.setdefault(card.value, []).append(card)
 
+        seen_keys = set()
         for value, cards in value_groups.items():
-            card_pool = cards + joker_cards
-            for r in range(3, len(card_pool) + 1):
+            # Un trío solo admite 1 Joker como máximo.
+            card_pool = cards + joker_cards[:1]
+            pool_size = len(card_pool)
+            if pool_size < 3:
+                continue
+
+            for r in sorted({3, pool_size}):
                 for combo in combinations(card_pool, r):
                     if self._is_valid_trio_combo(combo):
                         combo_list = list(combo)
                         key = tuple(sorted(c.id for c in combo_list))
-                        if key not in {tuple(sorted(c.id for c in existing)) for existing in trios}:
+                        if key not in seen_keys:
+                            seen_keys.add(key)
                             trios.append(combo_list)
 
         return trios
@@ -699,6 +914,15 @@ class AIBot(Player):
     def _find_all_sequences(self):
         """
         Finds all valid sequences in current hand, including sequences that use jokers.
+
+        Igual que en _find_all_trios: con 2 mazos puede haber cartas
+        EXACTAMENTE duplicadas (mismo valor y palo). Para armar una
+        seguidilla, una segunda copia de la misma carta nunca ayuda a
+        extenderla (una seguidilla no repite rangos), así que primero se
+        deduplica por rango dentro de cada palo -eso ya evita casi toda la
+        explosión combinatoria-, y luego solo se prueban el tamaño mínimo (4)
+        y el tamaño completo del grupo, en vez de todos los tamaños
+        intermedios.
         """
         sequences = []
         natural_cards = [c for c in self.playerHand if not c.joker]
@@ -710,8 +934,19 @@ class AIBot(Player):
 
         seen_sequences = set()
         for suit, cards in suit_groups.items():
-            card_pool = cards + joker_cards
-            for r in range(4, len(card_pool) + 1):
+            # Deduplicar por rango: una segunda copia del mismo rango+palo no
+            # aporta nada nuevo para formar una escalera más larga.
+            unique_by_rank = {}
+            for card in cards:
+                unique_by_rank.setdefault(card.value, card)
+            deduped_cards = list(unique_by_rank.values())
+
+            card_pool = deduped_cards + joker_cards
+            pool_size = len(card_pool)
+            if pool_size < 4:
+                continue
+
+            for r in sorted({4, pool_size}):
                 for combo in combinations(card_pool, r):
                     combo_list = list(combo)
                     if self._is_valid_sequence_combo(combo_list):
@@ -978,10 +1213,13 @@ class AIBot(Player):
             if card.joker:
                 usefulness += 0.25
         elif self.current_round == 4:
-            # Round 4 needs two distinct trios and one sequence, so value cards that
-            # can contribute to either a same-value group or a same-suit run.
-            usefulness += min(matching_value / 3, 0.5)
-            usefulness += min(matching_type / 4, 0.45)
+            # Round 4: if the card is part of the best partial play, it's very useful.
+            partial_cards = self._get_partial_play_cards()
+            if card in partial_cards:
+                usefulness += 0.8
+            else:
+                usefulness += min(matching_value / 3, 0.3)
+                usefulness += min(matching_type / 4, 0.25)
             if card.joker:
                 usefulness += 0.3
         else:
@@ -1004,6 +1242,15 @@ class AIBot(Player):
         # In round 2 only sequences (seguidillas) matter for going down
         if self.current_round == 2:
             completion += len(sequences) * 0.5
+        elif self.current_round == 4:
+            # Round 4: measure how many cards are part of the best partial play
+            partial = self._find_best_partial_play()
+            if partial:
+                used = sum(len(p) for p in partial)
+                completion = min(used / max(1, len(self.playerHand)), 1.0)
+            else:
+                completion += len(trios) * 0.15
+                completion += len(sequences) * 0.15
         else:
             completion += len(trios) * 0.3
             completion += len(sequences) * 0.4

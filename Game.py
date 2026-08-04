@@ -510,7 +510,7 @@ def mainGameLoop(screen, playersInOrder):
                         elif not current_player.isValidTrioF(trio2):
                             #print(f"EL TRIO 2 {[c for c in trio2]} NO ES VÁLIDO")
                             pass
-                        if not any(c.joker for c in seguidilla) and not current_player.isValidStraightF(seguidilla):
+                        elif not any(c.joker for c in seguidilla) and not current_player.isValidStraightF(seguidilla):
                             #print(f"LA SEGUIDILLA {[c for c in seguidilla]} NO ES VÁLIDA")
                             pass
                         elif any(c.joker for c in seguidilla) and not current_player.isValidStraightFJoker(seguidilla):
