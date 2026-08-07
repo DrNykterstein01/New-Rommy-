@@ -35,7 +35,7 @@ def main():
     parser.add_argument('--opponent-pool', type=int, default=0, help='Tamaño de la bolsa de oponentes congelados (0 = desactivada)')
     parser.add_argument('--opponent-refresh', type=int, default=50, help='Cada cuántas partidas se guarda un nuevo snapshot')
     parser.add_argument('--opponent-prob', type=float, default=0.3, help='Probabilidad de que un asiento use un oponente congelado')
-    parser.add_argument('--max-turns', type=int, default=1500, help='Límite de turnos por partida completa (default: 1500)')
+    parser.add_argument('--max-turns', type=int, default=2500, help='Límite de turnos por partida completa (default: 2500)')
     parser.add_argument('--save-every', type=int, default=50, help='Cada cuántas partidas se guarda el modelo (default: 50)')
     parser.add_argument('--verbose-every', type=int, default=10, help='Cada cuántas partidas se imprime el progreso (default: 10)')
     parser.add_argument('--seed', type=int, default=None)

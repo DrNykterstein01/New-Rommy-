@@ -50,6 +50,16 @@ class AIBot(Player):
 
         # Current round context (set by Game loop) to adapt strategy
         self.current_round = None
+
+        # Cache de _find_all_trios()/_find_all_sequences(): estas búsquedas
+        # se piden varias veces por turno (decide_play_cards, decide_discard,
+        # _evaluate_hand_completion, _find_best_partial_play en ronda 4...)
+        # y son las más caras de calcular. Se guardan aquí y solo se
+        # recalculan cuando la mano realmente cambió (ver _get_trios_and_sequences).
+        self._search_cache_key = None
+        self._search_cache_trios = []
+        self._search_cache_sequences = []
+
         self.strategy_weights = {
             'aggressive': 0.5,
             'conservative': 0.3,
@@ -416,34 +426,27 @@ class AIBot(Player):
             # Discard from the cards NOT in the partial play first.
             if round_ctx == 4:
                 protected = self._get_partial_play_cards()
-                if protected:
-                    candidates = [c for c in self.playerHand if c not in protected]
-                    if candidates:
-                        card_values = self._calculate_card_values()
-                        worst_card = min(candidates, key=lambda c: card_values.get(c, 0))
-                        return worst_card
-                    # All cards are in the partial play but we still can't bajar:
-                    # discard the lowest-value card from the smallest group.
-                    partial = self._find_best_partial_play()
-                    if partial:
-                        smallest = min(partial, key=len)
-                        if smallest:
+                candidates = [c for c in self.playerHand if c not in protected]
+                if candidates:
+                    card_values = self._calculate_card_values()
+                    worst_card = min(candidates, key=lambda c: card_values.get(c, 0))
+                    return worst_card
+                # No hay nada identificado como "de sobra" todavía (mano
+                # entera protegida, o aún sin ninguna jugada parcial) -> cae
+                # al descarte genérico de menor valor al final de la función.
+            else:
+                valid_plays = self._find_valid_plays(round_ctx)
+                if valid_plays:
+                    best = self._select_best_play(valid_plays, round_ctx)
+                    if best:
+                        # `best` is a tuple of plays (each play is a list of Card)
+                        used_cards = [c for play in best for c in play]
+                        # prefer discarding a card not needed for the best play
+                        candidates = [c for c in self.playerHand if c not in used_cards]
+                        if candidates:
                             card_values = self._calculate_card_values()
-                            worst_card = min(smallest, key=lambda c: card_values.get(c, 0))
+                            worst_card = min(candidates, key=lambda c: card_values.get(c, 0))
                             return worst_card
-
-            valid_plays = self._find_valid_plays(round_ctx)
-            if valid_plays:
-                best = self._select_best_play(valid_plays, round_ctx)
-                if best:
-                    # `best` is a tuple of plays (each play is a list of Card)
-                    used_cards = [c for play in best for c in play]
-                    # prefer discarding a card not needed for the best play
-                    candidates = [c for c in self.playerHand if c not in used_cards]
-                    if candidates:
-                        card_values = self._calculate_card_values()
-                        worst_card = min(candidates, key=lambda c: card_values.get(c, 0))
-                        return worst_card
 
         # fallback: discard the lowest-value card
         card_values = self._calculate_card_values()
@@ -725,8 +728,7 @@ class AIBot(Player):
         """
         plays = []
 
-        trios = self._find_all_trios()
-        sequences = self._find_all_sequences()
+        trios, sequences = self._get_trios_and_sequences()
 
         if round_number == 1:
             combinations = self._combine_plays(trios, sequences, min_trios=1, min_sequences=1)
@@ -735,11 +737,20 @@ class AIBot(Player):
         elif round_number == 3:
             combinations = self._combine_plays(trios, [], min_trios=3)
         elif round_number == 4:
+            # OJO: antes, si no había una bajada completa, se usaba
+            # _find_best_partial_play() (que puede devolver solo 2 grupos,
+            # con el tercero vacío) como si fuera un intento real de
+            # bajarse. Como esa jugada parcial a veces "casualmente" sumaba
+            # el mismo número de cartas que la mano completa (ej.: un solo
+            # trío hinchado con TODAS las duplicadas del mismo valor + la
+            # seguidilla), pasaba el filtro de "usa toda la mano" en
+            # decide_play_cards() sin ser una bajada válida de verdad (le
+            # faltaba el segundo trío), lo que además de desperdiciar el
+            # intento producía el error de consola "La propuesta debe tener
+            # al menos 3 cartas. (Tiene 0)" al validar el grupo vacío. La
+            # jugada parcial SOLO debe usarse para decidir qué descartar
+            # (ver _get_partial_play_cards), nunca como intento de bajada.
             combinations = self._combine_plays(trios, sequences, min_trios=2, min_sequences=1, use_all=True)
-            if not combinations:
-                partial = self._find_best_partial_play()
-                if partial:
-                    combinations = [partial]
         else:
             combinations = []
 
@@ -747,16 +758,22 @@ class AIBot(Player):
 
     def _find_best_partial_play(self):
         """
+        NOTA: ya no se usa en el flujo activo. Se dejó por si hace falta
+        para depuración manual, pero tanto decide_discard como
+        _evaluate_hand_completion y decide_buy_card ahora usan
+        _get_partial_play_cards(), que protege solo el tamaño MÍNIMO de
+        cada trío en vez de maximizar cartas usadas (ver esa función para
+        el porqué: maximizar cartas usadas podía "proteger" duplicadas que
+        no ayudan en nada a completar el segundo trío que falta).
+
         Para la ronda 4: si no existe una bajada completa (2 tríos + 1 seguidilla
         que use TODAS las cartas), busca la mejor combinación parcial: el conjunto
         de 2 tríos + 1 seguidilla (sin compartir cartas) que use la mayor cantidad
-        de cartas posible. Esto guía la decisión de descarte: las cartas que NO
-        pertenecen a la jugada parcial son las que se descartan primero.
+        de cartas posible.
 
         Retorna una tupla de jugadas (cada una una lista de Card) o None.
         """
-        trios = self._find_all_trios()
-        sequences = self._find_all_sequences()
+        trios, sequences = self._get_trios_and_sequences()
 
         if not trios or not sequences:
             return None
@@ -861,15 +878,66 @@ class AIBot(Player):
 
     def _get_partial_play_cards(self):
         """
-        Retorna el conjunto de cartas que pertenecen a la mejor jugada parcial
-        de ronda 4. Si no hay jugada parcial, retorna un conjunto vacío.
+        Retorna el conjunto de cartas que conviene proteger (no descartar)
+        en ronda 4 mientras aún no se puede bajar.
+
+        Protege la mejor seguidilla encontrada completa, más hasta 2 tríos
+        de valores DIFERENTES, pero cada trío solo con su tamaño MÍNIMO
+        viable (3 naturales, o 2 naturales + 1 Joker) -no con todas las
+        cartas duplicadas de ese valor que haya en mano-. Cualquier
+        duplicada de más allá de ese mínimo queda SIN proteger a propósito:
+        tener, por ejemplo, 5 cartas del mismo valor no ayuda en nada a
+        completar el segundo trío (que debe ser de un valor distinto), así
+        que esas de más deben quedar libres para descartarse y dejar
+        espacio a buscar el material que sí falta.
         """
         if self.current_round != 4 or self.downHand:
             return set()
-        partial = self._find_best_partial_play()
-        if not partial:
+
+        trios, sequences = self._get_trios_and_sequences()
+        if not trios and not sequences:
             return set()
-        return {c for play in partial for c in play}
+
+        def trio_value(t):
+            return next((c.value for c in t if not c.joker), None)
+
+        def minimal_trio(t):
+            naturals = [c for c in t if not c.joker][:3]
+            jokers = [c for c in t if c.joker][:1] if len(naturals) < 3 else []
+            return naturals + jokers
+
+        protected = set()
+
+        # La mejor seguidilla disponible se protege completa: a diferencia
+        # de un trío, cada carta de una seguidilla es de un rango distinto,
+        # así que no hay "duplicadas de sobra" que recortar de la misma forma.
+        # Eso sí: se prefiere una seguidilla puramente NATURAL (sin Joker) si
+        # ya es válida por sí sola -aunque exista una versión más larga
+        # estirada con el Joker-, para no gastar un Joker que podría hacer
+        # mucha falta para el trío que aún no se ha logrado armar.
+        if sequences:
+            natural_sequences = [s for s in sequences if not any(c.joker for c in s)]
+            best_sequence = max(natural_sequences, key=len) if natural_sequences else max(sequences, key=len)
+            protected.update(best_sequence)
+
+        # Hasta 2 tríos de valores diferentes, cada uno con su tamaño mínimo.
+        seen_values = set()
+        for t in sorted(trios, key=len, reverse=True):
+            if len(seen_values) == 2:
+                break
+            value = trio_value(t)
+            if value is None or value in seen_values:
+                continue
+            candidate = [c for c in minimal_trio(t) if c not in protected]
+            if len([c for c in candidate if not c.joker]) < 2:
+                # sin al menos 2 naturales propios no es un trío mínimo real
+                continue
+            if len(candidate) < 3:
+                continue
+            seen_values.add(value)
+            protected.update(candidate)
+
+        return protected
 
     def _find_all_trios(self):
         """
@@ -878,11 +946,15 @@ class AIBot(Player):
         El juego usa 2 mazos completos (Round.initDeck), así que puede haber
         cartas EXACTAMENTE duplicadas (p. ej. dos 7♣) en la mano. Antes esto
         se enumeraba con itertools.combinations probando TODOS los tamaños de
-        grupo posibles, lo cual escala mal cuando un bot acumula muchas
-        cartas del mismo valor (comprando sin bajarse). Aquí solo se prueban
-        el tamaño mínimo (3) y el tamaño completo del grupo disponible, que
-        alcanza para que la heurística sepa "hay un trío" y "cuál es el
-        trío más grande posible", sin la explosión combinatoria.
+        grupo, lo cual escalaba mal con muchas cartas del mismo valor. Se
+        intentó acotar probando solo tamaño 3 y el tamaño completo del grupo,
+        pero eso rompía la ronda 4 (que necesita encontrar la combinación
+        EXACTA de 2 tríos + 1 seguidilla que use TODA la mano) al saltarse
+        tamaños intermedios necesarios (p. ej. un trío de 4 cartas cuando el
+        grupo tenía 5 disponibles). La cota real que evita la explosión es
+        limitar el pool a como máximo 1 Joker (un trío nunca admite más), lo
+        cual ya deja el grupo lo bastante chico (como mucho ~8 cartas del
+        mismo valor + 1 Joker) para probar TODOS los tamaños sin problema.
         """
         trios = []
         natural_cards = [c for c in self.playerHand if not c.joker]
@@ -894,20 +966,25 @@ class AIBot(Player):
 
         seen_keys = set()
         for value, cards in value_groups.items():
-            # Un trío solo admite 1 Joker como máximo.
-            card_pool = cards + joker_cards[:1]
-            pool_size = len(card_pool)
-            if pool_size < 3:
-                continue
+            # Probar sin Joker, y por separado con CADA Joker específico (no
+            # solo "el primero"): si hay 2+ Jokers en mano, otra jugada
+            # simultánea (otro trío, o una seguidilla) puede necesitar
+            # justamente el Joker que aquí se descartaría por defecto.
+            joker_options = [None] + (joker_cards if joker_cards else [])
+            for joker_choice in joker_options:
+                card_pool = cards + ([joker_choice] if joker_choice is not None else [])
+                pool_size = len(card_pool)
+                if pool_size < 3:
+                    continue
 
-            for r in sorted({3, pool_size}):
-                for combo in combinations(card_pool, r):
-                    if self._is_valid_trio_combo(combo):
-                        combo_list = list(combo)
-                        key = tuple(sorted(c.id for c in combo_list))
-                        if key not in seen_keys:
-                            seen_keys.add(key)
-                            trios.append(combo_list)
+                for r in range(3, pool_size + 1):
+                    for combo in combinations(card_pool, r):
+                        if self._is_valid_trio_combo(combo):
+                            combo_list = list(combo)
+                            key = tuple(sorted(c.id for c in combo_list))
+                            if key not in seen_keys:
+                                seen_keys.add(key)
+                                trios.append(combo_list)
 
         return trios
 
@@ -915,18 +992,24 @@ class AIBot(Player):
         """
         Finds all valid sequences in current hand, including sequences that use jokers.
 
-        Igual que en _find_all_trios: con 2 mazos puede haber cartas
-        EXACTAMENTE duplicadas (mismo valor y palo). Para armar una
-        seguidilla, una segunda copia de la misma carta nunca ayuda a
-        extenderla (una seguidilla no repite rangos), así que primero se
-        deduplica por rango dentro de cada palo -eso ya evita casi toda la
-        explosión combinatoria-, y luego solo se prueban el tamaño mínimo (4)
-        y el tamaño completo del grupo, en vez de todos los tamaños
-        intermedios.
+        En vez de probar TODAS las combinaciones posibles de un grupo de
+        hasta 15 cartas (13 rangos + Jokers ≈ decenas de miles de
+        combinaciones por palo), esto recorre directamente RANGOS de rango
+        (p. ej. "del 6 al 9"), probando As-bajo y As-alto por separado, en
+        vez de partir de las cartas que ya se tienen. Esto es lo que permite
+        cubrir, sin casos especiales, las tres formas en que un Joker entra
+        en una seguidilla: tapando un hueco donde no hay carta natural,
+        extendiendo el rango más allá de las cartas que se tienen, o
+        sustituyendo una carta natural presente (para dejarla libre para
+        otra jugada — clave en la ronda 4, que necesita repartir TODA la
+        mano en 2 tríos + 1 seguidilla). Sigue siendo polinomial en vez de
+        exponencial, que era lo que volvía lentísimo el entrenamiento en
+        ronda 4.
         """
         sequences = []
         natural_cards = [c for c in self.playerHand if not c.joker]
         joker_cards = [c for c in self.playerHand if c.joker]
+        num_jokers = len(joker_cards)
 
         suit_groups = {}
         for card in natural_cards:
@@ -939,27 +1022,89 @@ class AIBot(Player):
             unique_by_rank = {}
             for card in cards:
                 unique_by_rank.setdefault(card.value, card)
-            deduped_cards = list(unique_by_rank.values())
 
-            card_pool = deduped_cards + joker_cards
-            pool_size = len(card_pool)
-            if pool_size < 4:
-                continue
+            for as_high in (False, True):
+                def rank_of(c, as_high=as_high):
+                    if c.value == 'A':
+                        return 14 if as_high else 1
+                    return c.numValue()
 
-            for r in sorted({4, pool_size}):
-                for combo in combinations(card_pool, r):
-                    combo_list = list(combo)
-                    if self._is_valid_sequence_combo(combo_list):
-                        sorted_combo = self.sortedStraight(combo_list)
-                        if sorted_combo:
-                            if sorted_combo is True:
-                                sorted_combo = combo_list
-                            key = tuple(sorted(c.id for c in sorted_combo))
-                            if key not in seen_sequences:
-                                seen_sequences.add(key)
-                                sequences.append(sorted_combo)
+                by_rank = {rank_of(c): c for c in unique_by_rank.values()}
+                if not by_rank:
+                    continue
+                min_rank, max_rank = min(by_rank), max(by_rank)
+
+                # lo/hi recorren rangos de rango posibles (no solo los que ya
+                # se tienen), para permitir que un Joker extienda la
+                # seguidilla más allá de las cartas naturales disponibles,
+                # tanto hacia atrás como hacia adelante.
+                lo_start = max(1, min_rank - num_jokers)
+                hi_cap = min(14, max_rank + num_jokers)
+                for lo in range(lo_start, max_rank + 1):
+                    for hi in range(lo + 3, hi_cap + 1):
+                        span = hi - lo + 1
+                        naturals_in_range = [by_rank[r] for r in range(lo, hi + 1) if r in by_rank]
+                        gaps_needed = span - len(naturals_in_range)  # rangos sin carta natural
+                        if gaps_needed > num_jokers or not naturals_in_range:
+                            continue
+                        spare_jokers = min(num_jokers - gaps_needed, len(naturals_in_range) - 1)
+
+                        # drop_count = cuántas naturales del rango se sustituyen
+                        # por Joker (0 = usar todas las naturales disponibles tal cual).
+                        for drop_count in range(0, spare_jokers + 1):
+                            if drop_count == 0:
+                                kept_variants = [naturals_in_range]
+                            else:
+                                kept_variants = [
+                                    [c for c in naturals_in_range if c not in drop_set]
+                                    for drop_set in combinations(naturals_in_range, drop_count)
+                                ]
+
+                            for kept in kept_variants:
+                                jokers_used = gaps_needed + drop_count
+                                if jokers_used == 0:
+                                    joker_choices = [()]
+                                else:
+                                    # Probar CUÁLES Jokers específicos se usan
+                                    # (no solo "los primeros N"): si hay 2+
+                                    # Jokers en mano, la combinación con el
+                                    # trío puede necesitar el OTRO Joker para
+                                    # no chocar por usar el mismo dos veces.
+                                    # num_jokers es siempre chico (unas
+                                    # pocas unidades), así que esto es barato.
+                                    joker_choices = list(combinations(joker_cards, jokers_used))
+                                for chosen_jokers in joker_choices:
+                                    combo = kept + list(chosen_jokers)
+                                    if len(combo) < 4:
+                                        continue
+                                    if self._is_valid_sequence_combo(combo):
+                                        sorted_combo = self.sortedStraight(combo)
+                                        if sorted_combo:
+                                            if sorted_combo is True:
+                                                sorted_combo = combo
+                                            key = tuple(sorted(c.id for c in sorted_combo))
+                                            if key not in seen_sequences:
+                                                seen_sequences.add(key)
+                                                sequences.append(sorted_combo)
 
         return sequences
+
+    def _get_trios_and_sequences(self):
+        """
+        Wrapper con caché para _find_all_trios()/_find_all_sequences(). Varias
+        funciones (decide_play_cards, decide_discard, _evaluate_hand_completion,
+        _find_best_partial_play...) piden esto varias veces por turno; como la
+        mano no cambia entre esas llamadas, se reutiliza el resultado en vez de
+        recalcular desde cero cada vez.
+        """
+        current_key = tuple(sorted(c.id for c in self.playerHand))
+        if current_key != self._search_cache_key:
+            self._search_cache_key = current_key
+            self._search_cache_trios = self._find_all_trios()
+            self._search_cache_sequences = self._find_all_sequences()
+        return self._search_cache_trios, self._search_cache_sequences
+
+
 
     def _is_valid_trio_combo(self, cards):
         if len(cards) < 3:
@@ -1236,18 +1381,22 @@ class AIBot(Player):
         """
         completion = 0.0
 
-        trios = self._find_all_trios()
-        sequences = self._find_all_sequences()
+        trios, sequences = self._get_trios_and_sequences()
 
         # In round 2 only sequences (seguidillas) matter for going down
         if self.current_round == 2:
             completion += len(sequences) * 0.5
         elif self.current_round == 4:
-            # Round 4: measure how many cards are part of the best partial play
-            partial = self._find_best_partial_play()
-            if partial:
-                used = sum(len(p) for p in partial)
-                completion = min(used / max(1, len(self.playerHand)), 1.0)
+            # Usa la MISMA protección mínima que decide_discard/decide_buy_card
+            # (ver _get_partial_play_cards): antes esto medía completitud
+            # contra la jugada parcial "más grande posible", que podía
+            # inflar el score a 1.0 con un solo trío hinchado de cartas
+            # duplicadas del mismo valor -haciendo creer que la mano estaba
+            # lista cuando en realidad le faltaba por completo el segundo
+            # trío (de un valor distinto)-.
+            protected = self._get_partial_play_cards()
+            if protected:
+                completion = min(len(protected) / max(1, len(self.playerHand)), 1.0)
             else:
                 completion += len(trios) * 0.15
                 completion += len(sequences) * 0.15

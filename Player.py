@@ -765,7 +765,7 @@ class Player:
             # self.playerHand.append(discardedCard)
             round.hands[self.playerId].append(discardedCard)
             self.playerHand = round.hands[self.playerId]
-            print(f"El jugador {self.playerName} compró la carta {discardedCard} y recibió una carta: {extraCard}, del mazo como castigo")
+            #print(f"El jugador {self.playerName} compró la carta {discardedCard} y recibió una carta: {extraCard}, del mazo como castigo")
             if hasattr(self, 'purchase_count') and getattr(self, 'current_round', None) == 4:
                 self.purchase_count += 1
             return [discardedCard, extraCard]

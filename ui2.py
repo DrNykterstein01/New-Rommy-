@@ -1279,6 +1279,57 @@ def main(manager_de_red): # <-- Acepta el manager de red
         print(f"Jugadores creados: {len(players)}")
         for p in players:
             print(f"Id: {p.playerId} --> Nombre:{p.playerName} ") 
+
+        # --- ETAPA 1: agregar bots de IA configurados por el host al crear la sala ---
+        # (Los bots todavía NO juegan su turno automáticamente -eso es la
+        # siguiente etapa-, pero ya se sientan en la mesa, reciben cartas, y
+        # participan en el reparto y en el cálculo de puntos como cualquier
+        # otro jugador, porque AIBot hereda de Player.)
+        num_bots = getattr(network_manager, 'num_bots', 0)
+        if num_bots > 0:
+            from AIBot import AIBot
+            try:
+                from rummy_env import RummyEnv
+                bot_action_dim = RummyEnv.ACTION_SPACE
+            except Exception as e:
+                print(f"[BOTS] No se pudo importar RummyEnv para action_dim, usando 3 por defecto: {e}")
+                bot_action_dim = 3
+
+            # El tamaño del estado que espera la red depende de CUÁNTOS
+            # jugadores había en total durante el entrenamiento (encode_state
+            # incluye un bloque de features por cada oponente). Si esta
+            # partida tiene un número distinto de jugadores al usado para
+            # entrenar el modelo, la carga de pesos fallará por mismatch de
+            # tamaño -por eso todo esto va en un try/except: si falla, el bot
+            # simplemente juega con su heurística base en vez de la red
+            # entrenada, en lugar de romper la partida-.
+            total_players_final = len(players) + num_bots
+            model_path = os.path.join(os.path.dirname(__file__), "aibot_selfplay.pt")
+            bot_id_base = 1000  # bien por encima de cualquier player_id real (1, 2, 3...)
+
+            for i in range(num_bots):
+                bot = AIBot(bot_id_base + i, "LouisBot")
+                try:
+                    dummy_players_info = [{'hand_size': 0} for _ in range(total_players_final)]
+                    dummy_state = bot.encode_state(None, 0, dummy_players_info, 1, phase=0)
+                    bot.rl_state_dim = len(dummy_state)
+                    bot.rl_action_dim = bot_action_dim
+                    bot.load_rl_model(model_path)
+                    if bot.rl_enabled and os.path.exists(model_path):
+                        bot.rl_epsilon = 0.0  # sin exploración aleatoria: juega lo mejor que aprendió
+                        print(f"[BOTS] {bot.playerName}: modelo entrenado cargado correctamente.")
+                    else:
+                        bot.rl_enabled = False
+                        print(f"[BOTS] {bot.playerName}: sin modelo entrenado disponible, jugará con la heurística base.")
+                except Exception as e:
+                    bot.rl_enabled = False
+                    print(f"[BOTS] {bot.playerName}: no se pudo cargar el modelo entrenado ({e}). "
+                          f"Probablemente esta partida tiene distinta cantidad de jugadores a la del "
+                          f"entrenamiento. Jugará con la heurística base igualmente.")
+                players.append(bot)
+
+            print(f"[BOTS] Se agregaron {num_bots} bot(s) a la partida. Total de jugadores: {len(players)}")
+
         fase = "eleccion"        
     else:
         # El Jugador va directo a la fase de eleccion

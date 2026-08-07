@@ -571,6 +571,7 @@ class   UIManager:
         self.name_input_box = InputBox(0, 0, 300, 40, smaller_font)
         self.password_input_box = InputBox(0, 0, 300, 40, smaller_font)
         self.max_players_input_box = InputBox(0, 0, 300, 40, smaller_font)
+        self.num_bots_input_box = InputBox(0, 0, 300, 40, smaller_font, text="0")
 
         self.join_player_input_box = InputBox(0, 0, 300, 40, smaller_font)
         self.join_password_input_box = InputBox(0, 0, 300, 40, smaller_font)
@@ -795,7 +796,8 @@ class   UIManager:
             ("Nombre de la Sala:", self.host_input_box),
             ("Nombre del Jugador:", self.name_input_box),
             ("Contraseña:", self.password_input_box),
-            ("Cantidad de Jugadores:", self.max_players_input_box)
+            ("Cantidad de Jugadores:", self.max_players_input_box),
+            ("Cantidad de Bots:", self.num_bots_input_box)
         ]
         total_inputs = len(campos)
         input_w, input_h = 250, 40
@@ -1383,10 +1385,19 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                         if max_players is None or max_players < 2 or max_players > 7:
                             self.invalid_players_until = pygame.time.get_ticks() + 2500
                             continue
+                        try:
+                            num_bots = int(self.num_bots_input_box.text)
+                        except Exception:
+                            num_bots = 0
+                        if num_bots < 0 or num_bots > 6:
+                            self.invalid_players_until = pygame.time.get_ticks() + 2500
+                            continue
                         # Intenta crear el servidor
                         exito = self.network_manager.start_server(nameHost, password, max_players,nameSala)
+                        self.network_manager.num_bots = num_bots
                         print("Servidor creado" if exito else "Error al crear servidor")
                         print(self.network_manager.host,self.network_manager.gameName)
+                        print(f"Bots configurados para esta sala: {num_bots}")
                         self.current_screen = "lobby"  # Cambia a la pantalla lobby
                 
                 elif self.current_screen == "lobby":  # Si estamos en la pantalla de lobby
@@ -1446,7 +1457,8 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                 self.host_input_box.handle_event(event)      
                 self.name_input_box.handle_event(event)  
                 self.password_input_box.handle_event(event)  
-                self.max_players_input_box.handle_event(event)  
+                self.max_players_input_box.handle_event(event)
+                self.num_bots_input_box.handle_event(event)  
             
             # --- MODIFICADO: Solo capturar texto si el chat está abierto ---
             elif self.current_screen == "lobby" and getattr(self, "show_chat", False):
@@ -1542,6 +1554,7 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
             self.name_input_box.update()
             self.password_input_box.update()
             self.max_players_input_box.update()
+            self.num_bots_input_box.update()
         elif self.current_screen == "lobby":  
             #self.messages_input_box.update()
             self.message_input_box.update()

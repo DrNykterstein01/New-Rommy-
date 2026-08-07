@@ -82,7 +82,7 @@ class RummyEnv:
                 player.winner = True
                 round_done = self._handle_round_completion(player)
                 if self.done:
-                    reward += 1.0
+                    reward += 5.0
                     return self._build_observation(), reward, True, {'phase': 1, 'win': True}
                 if round_done:
                     return self._build_observation(), reward + 0.5, False, {'phase': 1, 'round_end': True, 'round_winner': player.playerName, 'new_round': self.round_number}
@@ -97,7 +97,7 @@ class RummyEnv:
                 player.winner = True
                 round_done = self._handle_round_completion(player)
                 if self.done:
-                    reward += 1.0
+                    reward += 5.0
                     return self._build_observation(), reward, True, {'phase': 2, 'win': True}
                 if round_done:
                     return self._build_observation(), reward + 0.5, False, {'phase': 2, 'round_end': True, 'round_winner': player.playerName, 'new_round': self.round_number}
@@ -105,7 +105,24 @@ class RummyEnv:
             if self.turn_count >= self.max_turns:
                 self.done = True
                 print(f"\n[MATCH TIMEOUT] Se alcanzó el límite de {self.max_turns} turnos sin que nadie ganara la ronda {self.round_number}. Partida cortada.")
-                return self._build_observation(), reward - 1.0, True, {'phase': 2, 'win': False, 'timeout': True}
+                
+                # --- NUEVO CÓDIGO: Castigo global para todos los bots ---
+                # Aumentamos la severidad del castigo base a -2.0
+                castigo_severo = -2.5 
+                
+                for p in self.players:
+                    # Buscamos a los otros bots que no son el jugador actual
+                    if getattr(p, 'rl_enabled', False) and p != player:
+                        # Si tienen experiencias previas en su memoria, modificamos la última
+                        if len(p.rl_buffer) > 0:
+                            # Desempaquetamos la última transición: (state, action, reward, next_state, done)
+                            state, action, _, next_state, _ = p.rl_buffer[-1]
+                            # Sobreescribimos esa memoria inyectando el castigo severo y marcando el final de la partida
+                            p.rl_buffer[-1] = (state, action, castigo_severo, next_state, True)
+                # ---------------------------------------------------------
+                
+                # Devolvemos el castigo severo también para el jugador que detonó el límite
+                return self._build_observation(), reward + castigo_severo, True, {'phase': 2, 'win': False, 'timeout': True}
 
             self._advance_player()
             self._simulate_until_rl_turn()
@@ -140,16 +157,16 @@ class RummyEnv:
                 drawCard(player, self.round, fromDiscards=True)
                 player.playerHand = self.round.hands[player.playerId]
                 player.cardDrawn = True
-                print(f"[TURN] Ronda {self.round_number} | \n Jugador {player.playerName} tomó DEL DESCARTE: {discard_top}")
-                print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
+               #print(f"[TURN] Ronda {self.round_number} | \n Jugador {player.playerName} tomó DEL DESCARTE: {discard_top}")
+               #print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
                 return reward
             if len(self.round.pile) == 0:
                 refillDeck(self.round)
             drawCard(player, self.round)
             player.playerHand = self.round.hands[player.playerId]
             player.cardDrawn = True
-            print(f"[TURN] Ronda {self.round_number} | \n Jugador {player.playerName} tomó DEL MAZO")
-            print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
+           ##print(f"[TURN] Ronda {self.round_number} | \n Jugador {player.playerName} tomó DEL MAZO")
+           ##print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
             return 0.0
 
         if len(self.round.pile) == 0:
@@ -159,8 +176,8 @@ class RummyEnv:
         drawCard(player, self.round)
         player.playerHand = self.round.hands[player.playerId]
         player.cardDrawn = True
-        print(f"[TURN] Ronda {self.round_number} | \n Jugador {player.playerName} tomó DEL MAZO (fallback)")
-        print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
+       #print(f"[TURN] Ronda {self.round_number} | \n Jugador {player.playerName} tomó DEL MAZO (fallback)")
+        #print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
         return 0.0
 
     def _offer_buy_cycle(self, current_player):
@@ -183,7 +200,7 @@ class RummyEnv:
             if buyer.playerBuy:
                 buyer.buyCard(self.round)
                 buyer.playerBuy = False
-                print(f"[COMPRA] {buyer.playerName} compró el descarte {discard_top} (+carta de castigo) | Mano ahora: {[str(c) for c in buyer.playerHand]}")
+                #print(f"[COMPRA] {buyer.playerName} compró el descarte {discard_top} (+carta de castigo) | Mano ahora: {[str(c) for c in buyer.playerHand]}")
                 return True
 
         return False
@@ -220,13 +237,13 @@ class RummyEnv:
                 if not succeeded:
                     break
 
-                print(f"[INSERT] Jugador {player.playerName} insertó {card_to_insert} en la jugada de {target_player.playerName} (idx {target_index}) en ronda {self.round_number}")
+                #print(f"[INSERT] Jugador {player.playerName} insertó {card_to_insert} en la jugada de {target_player.playerName} (idx {target_index}) en ronda {self.round_number}")
                 reward += 0.1
 
                 if len(player.playerHand) == 0:
                     player.winner = True
                     round_done = self._handle_round_completion(player)
-                    return reward + (0.5 if round_done else 0.0)
+                    return reward + (1.0 if round_done else 0.0)
 
             return reward
 
@@ -448,7 +465,7 @@ class RummyEnv:
                 self.round.discards.append(card)
         player.cardDrawn = False
         player.isHand = False
-        print(f"[DISCARD] Jugador {player.playerName} descartó: {[str(c) for c in cards]} | Mano ahora: {[str(c) for c in player.playerHand]}")
+        #print(f"[DISCARD] Jugador {player.playerName} descartó: {[str(c) for c in cards]} | Mano ahora: {[str(c) for c in player.playerHand]}")
 
     def _is_match_over(self):
         active_players = [p for p in self.players if not p.isSpectator]
@@ -490,27 +507,28 @@ class RummyEnv:
             return False
 
         print(f"\n{'-'*70}")
-        print(f"[FIN DE RONDA {self.round_number}] Ganador: {winner.playerName} (puntos actuales: {winner.playerPoints})")
+        #print(f"[FIN DE RONDA {self.round_number}] Ganador: {winner.playerName} (puntos actuales: {winner.playerPoints})")
 
         eliminated = []
         for player in self.players:
             if player is winner or player.isSpectator:
                 continue
             pts = player.calculatePoints()
-            print(f"[PUNTOS] {player.playerName} sumó {pts} puntos -> Total: {player.playerPoints}")
+            #print(f"[PUNTOS] {player.playerName} sumó {pts} puntos -> Total: {player.playerPoints}")
             if player.playerPoints >= self.target_points:
                 eliminated.append(player)
 
         if eliminated:
             for p in eliminated:
                 p.isSpectator = True
-                print(f"[ELIMINADO] {p.playerName} queda eliminado con {p.playerPoints} puntos")
+                #print(f"[ELIMINADO] {p.playerName} queda eliminado con {p.playerPoints} puntos")
         else:
-            print("[ELIMINACION] No se eliminó a ningún jugador en esta ronda")
+            #rint("[ELIMINACION] No se eliminó a ningún jugador en esta ronda")
+            pass
 
         if self._is_match_over():
             self.done = True
-            print(f"[FIN DE PARTIDA] {winner.playerName} es el ganador definitivo de la partida.")
+            #print(f"[FIN DE PARTIDA] {winner.playerName} es el ganador definitivo de la partida.")
             print(f"{'-'*70}\n")
             return True
 
@@ -558,7 +576,7 @@ class RummyEnv:
         player.isHand = True
         # Turn header for debugging
         discard_top = self.round.discards[-1] if self.round.discards else None
-        print(f"\n[TURN] Ronda {self.round_number} | Jugador en turno: {player.playerName} | Tope descarte: {discard_top}")
+        #rint(f"\n[TURN] Ronda {self.round_number} | Jugador en turno: {player.playerName} | Tope descarte: {discard_top}")
 
         player.current_round = self.round_number
         discard_top = self.round.discards[-1] if self.round.discards else None
@@ -567,8 +585,8 @@ class RummyEnv:
             drawCard(player, self.round, fromDiscards=True)
             player.playerHand = self.round.hands[player.playerId]
             player.cardDrawn = True
-            print(f"[TURN] {player.playerName} tomó DEL DESCARTE: {discard_top}")
-            print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
+            #print(f"[TURN] {player.playerName} tomó DEL DESCARTE: {discard_top}")
+            #print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
         else:
             if len(self.round.pile) == 0:
                 refillDeck(self.round)
@@ -576,8 +594,8 @@ class RummyEnv:
             drawCard(player, self.round)
             player.playerHand = self.round.hands[player.playerId]
             player.cardDrawn = True
-            print(f"[TURN] {player.playerName} tomó DEL MAZO")
-            print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
+            #print(f"[TURN] {player.playerName} tomó DEL MAZO")
+            #print(f"[HAND] Mano de {player.playerName} tras tomar: {[str(c) for c in player.playerHand]}")
 
         # Play phase: if already bajado, try insertion; otherwise try bajar
         if player.downHand:
@@ -591,7 +609,8 @@ class RummyEnv:
                     targ_index = target['play_index']
                     ok = player.insertCard(targ_player, targ_index, card, pos)
                     if ok:
-                        print(f"[INSERT] Jugador {player.playerName} insertó {card} en la jugada de {targ_player.playerName}")
+                        #rint(f"[INSERT] Jugador {player.playerName} insertó {card} en la jugada de {targ_player.playerName}")
+                        pass
         else:
             play = player.decide_play_cards(self.round_number)
             if play and not player.downHand:

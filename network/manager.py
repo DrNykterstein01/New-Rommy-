@@ -22,6 +22,10 @@ class NetworkManager:
         self.client = GameClient(self.state, self.transport, self.config)
         self.discovery = Discovery(self.state, self.config)
         self.health = HealthMonitor(self.state, self.transport, self.config)
+        # Cantidad de bots de IA configurados por el host al crear la sala
+        # (0 = sin bots). ui.py lo asigna al crear la sala; ui2.py lo lee al
+        # armar la lista de jugadores de la partida.
+        self.num_bots = 0
     
     # === Métodos públicos (INTERFAZ COMPATIBLE) ===
     
@@ -116,7 +120,10 @@ class NetworkManager:
         return self.state.get_moves(server=True)
     
     def canStartGame(self):
-        return len(self.state.get_connected_players()) >= 2
+        # Cuenta los bots configurados: un host solo (1 jugador real
+        # conectado) puede iniciar la partida si agregó bots suficientes
+        # para llegar al mínimo de 2 "asientos" en la mesa.
+        return len(self.state.get_connected_players()) + getattr(self, 'num_bots', 0) >= 2
     
     def startGame(self):
         self.state.game_started = True
