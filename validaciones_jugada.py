@@ -61,7 +61,7 @@ def es_trio(cartas):
     - maximo 1 joker
     - las cartas no-joker deben tener el mismo valor
     """
-    if not cartas or len(cartas) != 3:
+    if not cartas or len(cartas) < 3:
         return False
 
     jokers = [c for c in cartas if _es_joker(c)]

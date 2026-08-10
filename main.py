@@ -21,6 +21,8 @@ def main():
     while running:
         result = ui_manager.handle_events()
         if result == "launch_ui2":
+            if len(network_manager.connected_players) == 1:
+                pygame.mixer.music.stop()
             if network_manager.is_host:
                 jugadores = network_manager.connected_players
                 print(f"Inicializando juego con {len(jugadores)}")

@@ -739,10 +739,10 @@ class Player:
             self.playerHand.remove(cardToInsert)
         
         # IMPORTANTE: Re-ordenar visualmente si es una escalera
-        '''if tipo_jugada == "straight":
+        if tipo_jugada == "straight":
             nueva_ordenada = self.sortedStraight(cartas_lista)
             if nueva_ordenada and isinstance(nueva_ordenada, list):
-                cartas_lista[:] = nueva_ordenada'''
+                cartas_lista[:] = nueva_ordenada
 
         return True
 
@@ -814,6 +814,105 @@ class Player:
             else:
                 totalPoints += 5 ### cambiar a 5 no se te olvide
         return totalPoints
+
+    def _get_play_type(self, play):
+        """
+        Determines if a play is a sequence or trio.
+
+        OJO: se revisa primero si TODAS las cartas comparten el mismo VALOR
+        (trío) antes que si comparten el mismo PALO (secuencia). Antes era
+        al revés, y como el juego usa 2 mazos completos, es bastante común
+        tener un trío formado con 2 cartas naturales del MISMO palo (p. ej.
+        dos 5♠ de los dos mazos) + un Joker -ese trío se clasificaba por
+        error como 'sequence', porque sus únicas cartas naturales
+        "compartían palo"-. Revisar el valor primero es siempre inequívoco:
+        una seguidilla válida JAMÁS puede tener el mismo valor repetido, así
+        que no hay riesgo de que esto reclasifique una secuencia real.
+        """
+        if not play or len(play) < 3:
+            return None
+
+        values = set(c.value for c in play if not c.joker)
+        if len(values) == 1:
+            return 'trio'
+
+        types = set(c.type for c in play if not c.joker)
+        if len(types) == 1:
+            return 'sequence'
+
+        values = set(c.value for c in play if not c.joker)
+        if len(values) == 1:
+            return 'trio'
+
+        return 'mixed'
+
+    def _get_insertion_positions(self, card, sequence):
+            """Returns every valid end where a card can extend a sequence."""
+            if self._get_play_type(sequence) != 'sequence':
+                return []
+    
+            positions = []
+            if self._is_valid_sequence_extension(card, sequence, "start"):
+                positions.append("start")
+            if self._is_valid_sequence_extension(card, sequence, "end"):
+                positions.append("end")
+            return positions
+    
+    def _is_valid_sequence_extension(self, card, sequence, position):
+        """Validates one concrete sequence extension without mutating the table."""
+        candidate = ([card] + list(sequence)) if position == "start" else (list(sequence) + [card])
+        if card.joker or any(current_card.joker for current_card in sequence):
+            return self.isValidStraightFJoker(candidate)
+        return self.isValidStraightF(candidate)
+
+    def _find_joker_substitution(self, card, sequence):
+        """
+        Si `card` puede sustituir a un Joker presente en `sequence` (una
+        seguidilla ya bajada en la mesa), retorna el índice de ese Joker
+        dentro de la lista. Si no aplica, retorna None. No modifica nada,
+        solo simula la sustitución y valida el resultado.
+        """
+        if card.joker or self._get_play_type(sequence) != 'sequence':
+            return None
+
+        suit = next((c.type for c in sequence if not c.joker), None)
+        if suit is None or card.type != suit:
+            return None
+
+        for idx, slot in enumerate(sequence):
+            if not slot.joker:
+                continue
+            candidate = list(sequence)
+            candidate[idx] = card
+            if any(c.joker for c in candidate):
+                valido = self.isValidStraightFJoker(candidate)
+            else:
+                valido = self.isValidStraightF(candidate)
+            if valido:
+                return idx
+
+        return None
+
+    def _can_insert_into_trio(self, card, trio):
+        """
+        Checks if a card can be inserted into a trio.
+        Trios accept cards with the same value (max 1 joker per trio).
+        Returns position 0 (always append for trios) or None.
+        """
+        if not trio or len(trio) < 3:
+            return None
+
+        trio_value = trio[0].value
+
+        if card.value == trio_value:
+            joker_count = sum(1 for c in trio if c.joker)
+            if not card.joker and joker_count <= 1:
+                return 0
+
+        if card.joker and not any(c.joker for c in trio):
+            return 0
+
+        return None
 
 
 

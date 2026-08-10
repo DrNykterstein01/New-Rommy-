@@ -571,7 +571,7 @@ class   UIManager:
         self.name_input_box = InputBox(0, 0, 300, 40, smaller_font)
         self.password_input_box = InputBox(0, 0, 300, 40, smaller_font)
         self.max_players_input_box = InputBox(0, 0, 300, 40, smaller_font)
-        self.num_bots_input_box = InputBox(0, 0, 300, 40, smaller_font, text="0")
+        self.num_bots_input_box = InputBox(0, 0, 300, 40, smaller_font, text="")
 
         self.join_player_input_box = InputBox(0, 0, 300, 40, smaller_font)
         self.join_password_input_box = InputBox(0, 0, 300, 40, smaller_font)

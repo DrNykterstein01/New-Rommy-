@@ -225,7 +225,7 @@ class RummyEnv:
                 if not insertion:
                     break
 
-                play_idx_rel, card_to_insert, position = insertion
+                play_idx_rel, card_to_insert, position, joker_index = insertion
                 if play_idx_rel < 0 or play_idx_rel >= len(table):
                     break
 
@@ -233,7 +233,7 @@ class RummyEnv:
                 target_player = target['owner']
                 target_index = target['play_index']
 
-                succeeded = player.insertCard(target_player, target_index, card_to_insert, position)
+                succeeded = player.insertCard(target_player, target_index, card_to_insert, position, jokerIndex=joker_index)
                 if not succeeded:
                     break
 
@@ -602,12 +602,12 @@ class RummyEnv:
             table = self._collect_table_plays()
             insertion = player.decide_insert_card([p['play'] for p in table])
             if insertion:
-                idx_rel, card, pos = insertion
+                idx_rel, card, pos, joker_idx = insertion
                 if 0 <= idx_rel < len(table):
                     target = table[idx_rel]
                     targ_player = target['owner']
                     targ_index = target['play_index']
-                    ok = player.insertCard(targ_player, targ_index, card, pos)
+                    ok = player.insertCard(targ_player, targ_index, card, pos, jokerIndex=joker_idx)
                     if ok:
                         #rint(f"[INSERT] Jugador {player.playerName} insertó {card} en la jugada de {targ_player.playerName}")
                         pass

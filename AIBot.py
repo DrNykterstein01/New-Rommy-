@@ -531,11 +531,15 @@ class AIBot(Player):
         """
         Decides which card to insert into existing plays.
         This is a key strategy: inserting cards reduces hand size without initial play.
-        Returns (play_index, card_to_insert, position) or None.
+        Returns (play_index, card_to_insert, position, joker_index) or None.
 
-        position siempre es la cadena "start" o "end" (insertCard() espera
-        exactamente eso; para un trío la posición no cambia la validez de la
-        jugada, así que usamos "end").
+        position es "start" o "end" para una extensión normal de secuencia,
+        "end" para un trío, o None para una SUSTITUCIÓN de Joker en una
+        secuencia (la carta natural ocupa el lugar exacto del Joker, y el
+        Joker pasa a la mano del jugador). Cuando position es None,
+        joker_index indica qué posición dentro de la jugada ocupa el Joker
+        sustituido (necesario para Player.insertCard). En cualquier otro
+        caso, joker_index es None.
         """
         if not self.downHand:
             return None
@@ -546,17 +550,23 @@ class AIBot(Player):
         for play_idx, play in enumerate(plays_in_table):
             play_type = self._get_play_type(play)
             for card in self.playerHand:
+                candidates = []  # lista de (position, joker_index)
                 if play_type == 'sequence':
-                    candidate_positions = self._get_insertion_positions(card, play)
+                    for position in self._get_insertion_positions(card, play):
+                        candidates.append((position, None))
+                    joker_idx = self._find_joker_substitution(card, play)
+                    if joker_idx is not None:
+                        candidates.append((None, joker_idx))
                 elif play_type == 'trio':
-                    candidate_positions = ["end"] if self._can_insert_into_trio(card, play) is not None else []
+                    if self._can_insert_into_trio(card, play) is not None:
+                        candidates.append(("end", None))
                 else:
                     # Jugada 'mixed' o no reconocida: no debería ocurrir para
                     # algo que ya está bajado en la mesa, pero por seguridad
                     # simplemente no se intenta insertar ahí.
-                    candidate_positions = []
+                    candidates = []
 
-                for position in candidate_positions:
+                for position, joker_idx in candidates:
                     insertion_score = self._score_insertion(card, play, play_idx)
                     if card.joker:
                         # A Joker is worth 25 points, so dispose of it whenever
@@ -564,12 +574,47 @@ class AIBot(Player):
                         insertion_score += 2.0
                     if position == "end":
                         insertion_score += 0.01
+                    if position is None:
+                        # Sustituir un Joker es doblemente bueno: vacía la
+                        # mano igual que cualquier inserción, PERO además
+                        # regala un Joker de vuelta (muy valioso: 25 puntos
+                        # y comodín flexible para cualquier otra jugada), así
+                        # que se prioriza por encima de una extensión normal.
+                        insertion_score += 3.0
 
                     if insertion_score > best_score:
                         best_score = insertion_score
-                        best_insertion = (play_idx, card, position)
+                        best_insertion = (play_idx, card, position, joker_idx)
 
         return best_insertion
+
+    def _find_joker_substitution(self, card, sequence):
+        """
+        Si `card` puede sustituir a un Joker presente en `sequence` (una
+        seguidilla ya bajada en la mesa), retorna el índice de ese Joker
+        dentro de la lista. Si no aplica, retorna None. No modifica nada,
+        solo simula la sustitución y valida el resultado.
+        """
+        if card.joker or self._get_play_type(sequence) != 'sequence':
+            return None
+
+        suit = next((c.type for c in sequence if not c.joker), None)
+        if suit is None or card.type != suit:
+            return None
+
+        for idx, slot in enumerate(sequence):
+            if not slot.joker:
+                continue
+            candidate = list(sequence)
+            candidate[idx] = card
+            if any(c.joker for c in candidate):
+                valido = self.isValidStraightFJoker(candidate)
+            else:
+                valido = self.isValidStraightF(candidate)
+            if valido:
+                return idx
+
+        return None
 
     def _try_insert_card(self, card, play):
         """
@@ -678,17 +723,25 @@ class AIBot(Player):
     def _get_play_type(self, play):
         """
         Determines if a play is a sequence or trio.
+
+        OJO: se revisa primero si TODAS las cartas comparten el mismo VALOR
+        (trío) antes que si comparten el mismo PALO (secuencia). Antes era
+        al revés, y como el juego usa 2 mazos completos, es bastante común
+        tener un trío formado con 2 cartas naturales del MISMO palo (p. ej.
+        dos 5♠ de los dos mazos) + un Joker -ese trío se clasificaba por
+        error como 'sequence', porque sus únicas cartas naturales
+        "compartían palo"-. Revisar el valor primero es siempre inequívoco:
+        una seguidilla válida JAMÁS puede tener el mismo valor repetido, así
+        que no hay riesgo de que esto reclasifique una secuencia real.
         """
         if not play or len(play) < 3:
             return None
 
-        first_card = play[0]
-        #print(f"PLAY EN CUESTIÓN PARA EL GETPLAYTYPE: {[str(c) for c in play]}")
+        values = set(c.value for c in play if not c.joker)
+        if len(values) == 1:
+            return 'trio'
 
-        types = set(c.type for c in play if not c.joker) #ANALIZAR ESTA LÍNEA
-        #AttributeError: 'str' object has no attribute 'joker'. Did you mean: 'lower'?
-        #lo está leyendo como string, eso quiere decir, que seguramente en esta línea
-        #está leyendo es el nombre del jugador, cosa que no debería ser
+        types = set(c.type for c in play if not c.joker)
         if len(types) == 1:
             return 'sequence'
 
