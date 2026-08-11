@@ -6,7 +6,21 @@ import time
 from network import NetworkManager
 import sys
 
-icon = pygame.image.load("assets/icon.png") 
+
+def resource_path(relative_path):
+    """
+    Devuelve la ruta absoluta a un recurso (imagen, sonido, fuente...),
+    funcionando tanto en desarrollo normal como empaquetado con PyInstaller
+    (--onefile o --onedir). Ver la misma función en main.py para más detalle.
+    """
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+
+icon = pygame.image.load(resource_path("assets/icon.png"))
 pygame.display.set_icon(icon)
 screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption("RUMMY 500")
@@ -237,7 +251,7 @@ class   UIManager:
         # Dimensiones de la pantalla
         self.SCREEN_WIDTH = screen_width
         self.SCREEN_HEIGHT = screen_height
-        self.ASSETS_PATH = os.path.join(os.path.dirname(__file__), "assets")
+        self.ASSETS_PATH = resource_path("assets")
         self.FONT_FILE = os.path.join(self.ASSETS_PATH, "PressStart2P-Regular.ttf")
         self.cacheDeFuentes = {}
         # Manager de red (para conectar con el servidor, enviar/recibir datos)
@@ -278,13 +292,13 @@ class   UIManager:
         self.no_server_until = 0  
         self.invalid_players_until = 0
 
-        click_path = os.path.join("assets", "sonido", "click.wav")
+        click_path = resource_path(os.path.join("assets", "sonido", "click.wav"))
         self.click_sound = pygame.mixer.Sound(click_path)      
         #------------------------------------
 
 
     def load_assets(self):
-        assets_path = os.path.join(os.getcwd(), "assets")  # Ruta a la carpeta de assets
+        assets_path = resource_path("assets")  # Ruta a la carpeta de assets
 
         # Guardar ruta de la fuente pixelada y tamaño global pequeño
         self.global_font_size = 18  # <-- tamaño pequeño uniforme (ajusta si quieres más/menos)
@@ -297,7 +311,7 @@ class   UIManager:
             self.pixel_font = None
             print("Advertencia: No se pudo cargar la fuente pixelada. Usando fuente por defecto.")
         try:
-            conectar_path = os.path.join(os.getcwd(), "assets", "conectar_btn.png")
+            conectar_path = resource_path(os.path.join("assets", "conectar_btn.png"))
             self.conectar_img = pygame.image.load(conectar_path).convert_alpha()        
         except Exception:
             self.conectar_img = None
@@ -339,7 +353,7 @@ class   UIManager:
     # Función para obtener una fuente personalizada o de respaldo
     def get_font(self, size):
         try:
-            font_path = os.path.join(os.getcwd(), "assets", "pixel.ttf")
+            font_path = resource_path(os.path.join("assets", "pixel.ttf"))
             return pygame.font.Font(font_path, size)
         except:
             return pygame.font.SysFont("arial", size)
@@ -347,7 +361,7 @@ class   UIManager:
     # Función para inicializar todos los botones y elementos de la interfaz
     def init_components(self):
         
-        self.crear_partida_img = pygame.image.load("assets/crear_button.png").convert_alpha()
+        self.crear_partida_img = pygame.image.load(resource_path("assets/crear_button.png")).convert_alpha()
         self.crear_partida_img_scaled = pygame.transform.scale(self.crear_partida_img, (120, 40))  # Tamaño pequeño
         self.crear_partida_img_rect = self.crear_partida_img_scaled.get_rect()        
         # Se escalan las imágenes originales basándose en la resolusión actual de la pantalla
@@ -506,7 +520,7 @@ class   UIManager:
         # Botón "enviar mensaje" en menu lobby
         # Cargar PNG de enviar mensaje y usar mismo tamaño que el botón "Crear partida" en crear sala
         try:
-            send_img = pygame.image.load(os.path.join("assets", "enviar_mensaje.png")).convert_alpha()
+            send_img = pygame.image.load(resource_path(os.path.join("assets", "enviar_mensaje.png"))).convert_alpha()
         except Exception:
             send_img = None
         # usar el mismo tamaño que crear_partida_img_scaled (si existe)
@@ -519,10 +533,10 @@ class   UIManager:
             # ¡NUEVO TAMAÑO! Como tus iconos son cuadraditos, usamos 70x70 
             # para que dejen de verse achatados y feos.
             tamano_icono = (150, 150) 
-            self.chat_img_normal = pygame.image.load(os.path.join("assets", "chat_normal.png")).convert_alpha()
+            self.chat_img_normal = pygame.image.load(resource_path(os.path.join("assets", "chat_normal.png"))).convert_alpha()
             self.chat_img_normal = pygame.transform.scale(self.chat_img_normal, tamano_icono) 
             
-            self.chat_img_notif = pygame.image.load(os.path.join("assets", "chat_notif.png")).convert_alpha()
+            self.chat_img_notif = pygame.image.load(resource_path(os.path.join("assets", "chat_notif.png"))).convert_alpha()
             self.chat_img_notif = pygame.transform.scale(self.chat_img_notif, tamano_icono)
         except Exception as e:
             print("Error cargando las imágenes del chat:", e)
@@ -1715,5 +1729,4 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
             self.SCREEN.blit(lbl_no, lbl_no.get_rect(center=btn_no.center))
             
             pygame.display.flip()
-            clock.tick(60)       
-        
+            clock.tick(60)

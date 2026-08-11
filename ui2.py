@@ -2244,6 +2244,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 bot_turno_estado["bot_id"] = bot_en_turno.playerId
                 bot_turno_estado["fase_accion"] = "pensando_robo"
                 bot_turno_estado["t"] = time.time() + BOT_DELAY_PENSAR
+                bot_turno_estado["intentos_insercion"] = 0
 
 
             ahora = time.time()
@@ -2349,7 +2350,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     }
                     waiting = True
                     time_waiting = time.time()
-                    if _debe_saltar_ciclo_compra(players, mazo_descarte):
+                    saltar_compra = _debe_saltar_ciclo_compra(players, mazo_descarte)
+                    if saltar_compra:
                         # 2 jugadores activos y ya no es el primer turno de la
                         # ronda: nadie puede comprar de todas formas (ver
                         # _debe_saltar_ciclo_compra), así que se "vence" la
@@ -2362,7 +2364,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     # no "recibe" su propio mensaje por red, así que aplicamos aquí
                     # mismo el mismo efecto que tendría jugador_local al recibirlo:
                     # habilitar el botón "Comprar carta" si corresponde.
-                    if jugador_local and mazo_descarte and getattr(mazo_descarte[-1], "discarded_by", None) == jugador_local.playerId:
+                    if saltar_compra:
+                        pass  # nada que comprar: ni botón ni mensaje de compra
+                    elif jugador_local and mazo_descarte and getattr(mazo_descarte[-1], "discarded_by", None) == jugador_local.playerId:
                         mensaje_temporal = f"{bot_en_turno.playerName} pasó del descarte. Ha iniciado un ciclo de compra."
                         mensaje_tiempo = time.time()
                     elif jugador_local and not jugador_local.isHand:
@@ -2435,126 +2439,74 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 bot_turno_estado["t"] = time.time() + BOT_DELAY_ENTRE_ACCIONES
 
             # --- PASO 2.5: insertar cartas en jugadas de la mesa (propias o ajenas),
-            #     si el bot ya está bajado. Se repite en bucle -como en el
-            #     entrenamiento (RummyEnv._apply_play)- para insertar tantas
-            #     cartas válidas como sea posible en el mismo turno, no solo una. ---
+            #     si el bot ya está bajado. UNA inserción por paso (no todas de
+            #     golpe): así se nota visualmente cada acción por separado -por
+            #     ejemplo, cuando sustituye un Joker y luego, en el SIGUIENTE
+            #     paso (con su propio delay), inserta ese mismo Joker recuperado
+            #     en otra jugada-. Se mantiene en esta fase, con un pequeño
+            #     descanso entre intentos, hasta que ya no encuentre más
+            #     inserciones válidas. ---
             elif accion == "pensando_insercion" and ahora >= bot_turno_estado["t"] and bot_en_turno.cardDrawn:
-                if bot_en_turno.downHand and bot_en_turno.playerHand:
+                hizo_insercion = False
+                bot_turno_estado["intentos_insercion"] = bot_turno_estado.get("intentos_insercion", 0) + 1
+                tope_intentos = len(bot_en_turno.playerHand) + 5  # cota de seguridad para todo el turno
+
+                if bot_en_turno.downHand and bot_en_turno.playerHand and bot_turno_estado["intentos_insercion"] <= tope_intentos:
                     try:
-                        intentos = 0
-                        max_intentos = len(bot_en_turno.playerHand) + 1  # cota de seguridad
-                        while intentos < max_intentos and bot_en_turno.playerHand:
-                            intentos += 1
+                        tabla = []
+                        for p in players:
+                            if getattr(p, "isSpectator", False):
+                                continue
+                            for idx_jugada, jugada in enumerate(getattr(p, "playMade", None) or []):
+                                tabla.append({"owner": p, "play_index": idx_jugada, "play": jugada})
 
-                            tabla = []
-                            for p in players:
-                                if getattr(p, "isSpectator", False):
-                                    continue
-                                for idx_jugada, jugada in enumerate(getattr(p, "playMade", None) or []):
-                                    tabla.append({"owner": p, "play_index": idx_jugada, "play": jugada})
-
-                            if not tabla:
-                                break
-
+                        if tabla:
                             insercion = bot_en_turno.decide_insert_card([t["play"] for t in tabla])
-                            if not insercion:
-                                break
+                            if insercion:
+                                idx_rel, carta_insertar, posicion, joker_index = insercion
+                                if 0 <= idx_rel < len(tabla):
+                                    destino = tabla[idx_rel]
+                                    target_player = destino["owner"]
+                                    idx_jugada_real = destino["play_index"]
+                                    tipo_jugada = bot_en_turno._get_play_type(destino["play"])
+                                    subtype = "straight" if tipo_jugada == "sequence" else ("trio" if tipo_jugada == "trio" else None)
 
-                            idx_rel, carta_insertar, posicion, joker_index = insercion
-                            if idx_rel < 0 or idx_rel >= len(tabla):
-                                break
+                                    ok = safe_insert_card(bot_en_turno, target_player, idx_jugada_real, carta_insertar, posicion, subtype, joker_index=joker_index)
+                                    if ok:
+                                        hizo_insercion = True
+                                        mensaje_temporal = f"{bot_en_turno.playerName} insertó una carta en la mesa."
+                                        mensaje_tiempo = time.time()
+                                        if getattr(carta_insertar, "joker", False):
+                                            if target_player.playerId not in jokers_insertados_este_turno:
+                                                jokers_insertados_este_turno.append(target_player.playerId)
 
-                            destino = tabla[idx_rel]
-                            target_player = destino["owner"]
-                            idx_jugada_real = destino["play_index"]
-                            tipo_jugada = bot_en_turno._get_play_type(destino["play"])
-                            subtype = "straight" if tipo_jugada == "sequence" else ("trio" if tipo_jugada == "trio" else None)
-
-                            ok = safe_insert_card(bot_en_turno, target_player, idx_jugada_real, carta_insertar, posicion, subtype, joker_index=joker_index)
-                            if not ok:
-                                # Evita reintentar indefinidamente la misma inserción fallida.
-                                break
-
-                            mensaje_temporal = f"{bot_en_turno.playerName} insertó una carta en la mesa."
-                            mensaje_tiempo = time.time()
-                            if getattr(carta_insertar, "joker", False):
-                                if target_player.playerId not in jokers_insertados_este_turno:
-                                    jokers_insertados_este_turno.append(target_player.playerId)
-
-                            msgInsertar = {
-                                "type": "INSERTAR_CARTA",
-                                "playerHand": bot_en_turno.playerHand,
-                                "jugadas_bajadas": getattr(target_player, "jugadas_bajadas", None),
-                                "playMade": target_player.playMade,
-                                "playerId": target_player.playerId,
-                                "playerId2": bot_en_turno.playerId,
-                                "round": round
-                            }
-                            if posicion == None:
-                                voz_substitute.play()
-                            else:
-                                voz_insert.play()
-                            network_manager.broadcast_message(msgInsertar)
+                                        msgInsertar = {
+                                            "type": "INSERTAR_CARTA",
+                                            "playerHand": bot_en_turno.playerHand,
+                                            "jugadas_bajadas": getattr(target_player, "jugadas_bajadas", None),
+                                            "playMade": target_player.playMade,
+                                            "playerId": target_player.playerId,
+                                            "playerId2": bot_en_turno.playerId,
+                                            "round": round
+                                        }
+                                        try:
+                                            if posicion is None:
+                                                voz_substitute.play()
+                                            else:
+                                                voz_insert.play()
+                                        except Exception as e:
+                                            print(f"[BOTS] {bot_en_turno.playerName}: error reproduciendo sonido de inserción ({e}).")
+                                        network_manager.broadcast_message(msgInsertar)
                     except Exception as e:
                         print(f"[BOTS] {bot_en_turno.playerName}: error insertando cartas en la mesa ({e}).")
-                    
-                    try:
-                        intentos = 0
-                        max_intentos = len(bot_en_turno.playerHand) + 1  # cota de seguridad
-                        while intentos < max_intentos and bot_en_turno.playerHand:
-                            intentos += 1
 
-                            tabla = []
-                            for p in players:
-                                if getattr(p, "isSpectator", False):
-                                    continue
-                                for idx_jugada, jugada in enumerate(getattr(p, "playMade", None) or []):
-                                    tabla.append({"owner": p, "play_index": idx_jugada, "play": jugada})
-
-                            if not tabla:
-                                break
-
-                            insercion = bot_en_turno.decide_substitute_joker([t["play"] for t in tabla])
-                            if not insercion:
-                                break
-
-                            idx_rel, carta_insertar = insercion
-                            posicion = None
-                            if idx_rel < 0 or idx_rel >= len(tabla):
-                                break
-
-                            destino = tabla[idx_rel]
-                            target_player = destino["owner"]
-                            idx_jugada_real = destino["play_index"]
-                            tipo_jugada = bot_en_turno._get_play_type(destino["play"])
-                            subtype = "straight" if tipo_jugada == "sequence" else ("trio" if tipo_jugada == "trio" else None)
-
-                            ok = safe_insert_card(bot_en_turno, target_player, idx_jugada_real, carta_insertar, posicion, subtype)
-                            if not ok:
-                                # Evita reintentar indefinidamente la misma inserción fallida.
-                                break
-
-                            mensaje_temporal = f"{bot_en_turno.playerName} insertó una carta en la mesa."
-                            mensaje_tiempo = time.time()
-                            if getattr(carta_insertar, "joker", False):
-                                if target_player.playerId not in jokers_insertados_este_turno:
-                                    jokers_insertados_este_turno.append(target_player.playerId)
-
-                            msgInsertar = {
-                                "type": "INSERTAR_CARTA",
-                                "playerHand": bot_en_turno.playerHand,
-                                "jugadas_bajadas": getattr(target_player, "jugadas_bajadas", None),
-                                "playMade": target_player.playMade,
-                                "playerId": target_player.playerId,
-                                "playerId2": bot_en_turno.playerId,
-                                "round": round
-                            }
-                            network_manager.broadcast_message(msgInsertar)
-                    except Exception as e:
-                        print(f"[BOTS] {bot_en_turno.playerName}: error sustituyendo un joker ({e}).")
-
-                bot_turno_estado["fase_accion"] = "pensando_descarte"
-                bot_turno_estado["t"] = time.time() + BOT_DELAY_ENTRE_ACCIONES
+                if hizo_insercion:
+                    # Se hizo UNA inserción en este paso; se espera antes de
+                    # intentar la siguiente (se queda en esta misma fase).
+                    bot_turno_estado["t"] = time.time() + BOT_DELAY_ENTRE_ACCIONES
+                else:
+                    bot_turno_estado["fase_accion"] = "pensando_descarte"
+                    bot_turno_estado["t"] = time.time() + BOT_DELAY_ENTRE_ACCIONES
 
             # --- PASO 3: descartar y ceder el turno al siguiente jugador ---
             elif accion == "pensando_descarte" and ahora >= bot_turno_estado["t"] and bot_en_turno.cardDrawn:
@@ -3002,15 +2954,17 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             bought = True
                             waiting = True
                             time_waiting = time.time()
-                            if _debe_saltar_ciclo_compra(players, mazo_descarte):
+                            saltar_compra = _debe_saltar_ciclo_compra(players, mazo_descarte)
+                            if saltar_compra:
                                 # Mismo caso que para el bot: con 2 jugadores
                                 # activos y ya pasado el primer turno de la
                                 # ronda, nadie puede comprar de todas formas.
                                 time_waiting = time.time() - 9
                             jugador_local.playerPass = True
 
-                            mensaje_temporal = "Esperando decision de compra de los otros jugadores."
-                            mensaje_tiempo = time.time()
+                            if not saltar_compra:
+                                mensaje_temporal = "Esperando decision de compra de los otros jugadores."
+                                mensaje_tiempo = time.time()
 
                             if network_manager.is_host:
                                 network_manager.broadcast_message(msgPasarD)
@@ -6131,6 +6085,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         pygame.mixer.music.fadeout(4000)
                         pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai"):
+                            # Pequeña pausa para que la voz de la última acción
+                            # del bot (fin de turno / inserción / etc.) no se
+                            # encime con la voz de "ganador".
+                            pygame.time.wait(1000)
                             voz_winner1.play()
                         fase = "fin1"
                         fase_fin_tiempo = time.time()
@@ -6184,6 +6142,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         pygame.mixer.music.fadeout(4000)
                         pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai"):
+                            pygame.time.wait(1000)
                             voz_winner2.play()
                         fase = "fin2"
                         fase_fin_tiempo = time.time()
@@ -6235,6 +6194,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         pygame.mixer.music.fadeout(4000)
                         pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai"):
+                            pygame.time.wait(1000)
                             voz_winner3.play()                    
                         fase = "fin3"
                         fase_fin_tiempo = time.time()
@@ -6287,6 +6247,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         pygame.mixer.music.fadeout(4000)
                         pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai"):
+                            pygame.time.wait(1000)
                             voz_winner3.play()
                         fase = "fin4"
                         fase_fin_tiempo = time.time()

@@ -1,8 +1,25 @@
 import pygame
 import sys
+import os
 from ui import UIManager
 from network import NetworkManager
 from volumen import ControlVolumen
+
+
+def resource_path(relative_path):
+    """
+    Devuelve la ruta absoluta a un recurso (imagen, sonido, fuente...),
+    funcionando tanto en desarrollo normal como empaquetado con PyInstaller
+    (--onefile o --onedir). PyInstaller extrae los archivos agregados con
+    --add-data a una carpeta temporal indicada en sys._MEIPASS; fuera de un
+    ejecutable empaquetado, sys._MEIPASS no existe y se usa la carpeta del
+    propio script como base.
+    """
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 
 def main():
@@ -13,7 +30,7 @@ def main():
     ui_manager = UIManager(SCREEN_WIDTH, SCREEN_HEIGHT, network_manager)
 
     pygame.mixer.init()  
-    pygame.mixer.music.load("assets/sonido/musica_fondo.mp3")  
+    pygame.mixer.music.load(resource_path("assets/sonido/musica_fondo.mp3"))
     pygame.mixer.music.play(-1)
     ctrl_volumen=ControlVolumen()
 
