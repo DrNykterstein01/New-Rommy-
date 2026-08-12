@@ -24,15 +24,18 @@ def resource_path(relative_path):
 
 def main():
     pygame.init()
-     
-    SCREEN_WIDTH, SCREEN_HEIGHT = 1280, 720
+
+    info = pygame.display.Info()
+    SCREEN_WIDTH = min(info.current_w, 1920)
+    SCREEN_HEIGHT = min(info.current_h, 1080)
+
     network_manager = NetworkManager()
     ui_manager = UIManager(SCREEN_WIDTH, SCREEN_HEIGHT, network_manager)
 
-    pygame.mixer.init()  
+    pygame.mixer.init()
     pygame.mixer.music.load(resource_path("assets/sonido/musica_fondo.mp3"))
     pygame.mixer.music.play(-1)
-    ctrl_volumen=ControlVolumen()
+    ctrl_volumen = ControlVolumen()
 
     running = True
     while running:
@@ -43,42 +46,33 @@ def main():
             if network_manager.is_host:
                 jugadores = network_manager.connected_players
                 print(f"Inicializando juego con {len(jugadores)}")
-                # Para verificar que el network_manager siga ejecutándose
                 network_manager.running = True
 
                 import ui2
-                # Pasa el objeto network_manager que contiene el estado de la conexión
                 ui2.main(network_manager)
                 ui_manager.current_screen = "main"
-                
-                # Resetear estado para próxima partida
+
                 network_manager.game_started = False
                 continue
             else:
-                # Para verificar que el network_manager siga ejecutándose
                 network_manager.running = True
-                
+
                 import ui2
-                # Pasa el objeto network_manager que contiene el estado de la conexión
                 ui2.main(network_manager)
                 ui_manager.current_screen = "main"
-                
-                # Resetear estado para próxima partida
+
                 network_manager.game_started = False
                 continue
-                
+
         elif result is False:
             running = False
         else:
             ui_manager.update()
-            ctrl_volumen.actualizar_y_dibujar()          
-            
+            ctrl_volumen.actualizar_y_dibujar()
+
 
     pygame.quit()
     sys.exit()
 
 if __name__ == "__main__":
     main()
-{
-    
-}

@@ -18,13 +18,26 @@ from validaciones_jugada import (
     validar_jugada_avanzada_por_tipo,
 )
 
+
+def resource_path(relative_path):
+    """
+    Devuelve la ruta absoluta a un recurso (imagen, sonido, fuente...),
+    funcionando tanto en desarrollo normal como empaquetado con PyInstaller
+    (--onefile o --onedir). Ver la misma función en main.py para más detalle.
+    """
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
 network_manager = None   #NetworkManager()
 jugadores = []           #network_manager.connected_players
 print(f"Jugadore ... {jugadores}")
 
 pygame.init()
 
-icon = pygame.image.load("assets/icon.png")  # Reemplaza con la ruta correcta a tu imagen
+icon = pygame.image.load(resource_path("assets/icon.png"))  # Reemplaza con la ruta correcta a tu imagen
 pygame.display.set_icon(icon)
 screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption("RUMMY 500")
@@ -41,7 +54,7 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
 pygame.display.set_caption("Rummy 500 - Layout Base")
 
 # Cargar fondo
-ASSETS_PATH = os.path.join(os.path.dirname(__file__), "assets")
+ASSETS_PATH = resource_path("assets")
 fondo_path = os.path.join(ASSETS_PATH, "fondo_juego.png")
 fondo_img = pygame.image.load(fondo_path).convert()
 fondo_img = pygame.transform.scale(fondo_img, (WIDTH, HEIGHT))
@@ -1328,10 +1341,10 @@ def main(manager_de_red): # <-- Acepta el manager de red
     roundFour = False
 
     pygame.mixer.init()
-    inicio_sound_path = os.path.join(os.path.dirname(__file__), "assets", "sonido", "inicio.wav")
+    inicio_sound_path = resource_path(os.path.join("assets", "sonido", "inicio.wav"))
     inicio_sound = pygame.mixer.Sound(inicio_sound_path)
     inicio_sound.play()
-    bajarse_sound = os.path.join(os.path.dirname(__file__), "assets", "sonido", "bajarse.wav")
+    bajarse_sound = resource_path(os.path.join("assets", "sonido", "bajarse.wav"))
     # Asignar toda la informacion del manager de red de ui.py
     network_manager = manager_de_red 
     
@@ -1423,7 +1436,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
             if len(players) == 2 and num_bots == 1:
                 try:
                     from volumen import ControlVolumen
-                    pygame.mixer.music.load("assets/sonido/LouisBot3.mp3")
+                    pygame.mixer.music.load(resource_path("assets/sonido/LouisBot3.mp3"))
                     pygame.mixer.music.play(-1)
                     ctrl_volumen=ControlVolumen()
                 except Exception as e:
@@ -6126,7 +6139,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     fase = "eleccion"
                     roundOne = False
                     roundTwo = True   # Para Prueba
-                    pygame.mixer.music.load("assets/sonido/LouisBot2.mp3")
+                    pygame.mixer.music.load(resource_path("assets/sonido/LouisBot2.mp3"))
                     pygame.mixer.music.play(-1)
             continue
         
@@ -6178,7 +6191,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         fase = "eleccion"
                         roundTwo = False
                         roundThree = True
-                        pygame.mixer.music.load("assets/sonido/LouisBot1.mp3")
+                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot1.mp3"))
                         pygame.mixer.music.play(-1)
                 continue
 
@@ -6230,7 +6243,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         fase = "eleccion"
                         roundThree = False
                         roundFour = True
-                        pygame.mixer.music.load("assets/sonido/LouisBot4.mp3")
+                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot4.mp3"))
                         pygame.mixer.music.play(-1)
                 continue
 
@@ -6282,7 +6295,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         fase = "eleccion"
                         roundFour = False
                         roundOne = True
-                        pygame.mixer.music.load("assets/sonido/LouisBot3.mp3")
+                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot3.mp3"))
                         pygame.mixer.music.play(-1)
                 continue
 
