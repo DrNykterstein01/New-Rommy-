@@ -659,6 +659,11 @@ class UIManager:
         pero listando TODAS las salas encontradas en la red, cada una
         clicable, con botones "Volver" y "Seleccionar" debajo.
         """
+        # Re-leer la lista en vivo cada frame, igual que hace draw_join_menu.
+        # discoverServers() devuelve None (descubre en un hilo en segundo
+        # plano), así que self.servers NO puede venir de ahí; hay que leer
+        # la propiedad .servers que expone la lista que ese hilo va llenando.
+        self.servers = self.network_manager.servers
         MENU_MOUSE_POS = pygame.mouse.get_pos()
         smaller_font = self.get_font(20)
 
