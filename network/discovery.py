@@ -18,6 +18,7 @@ class Discovery:
         self.state = state
         self.config = config or NetworkConfig()
         self.discovered_servers = []
+        self._servers_lock = threading.Lock()
     
     def start_broadcast(self):
         """Inicia el broadcast periódico de la sala (SOLO HOST, CORRE EN HILO)."""
@@ -63,7 +64,8 @@ class Discovery:
     
     def discover_servers(self, timeout: int = 5):
         """Escucha paquetes UDP broadcast y actualiza discovered_servers asincronamente."""
-        self.discovered_servers = []
+        with self._servers_lock:
+            self.discovered_servers = []
         
         def listen_loop():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -83,11 +85,22 @@ class Discovery:
                 try:
                     data, addr = sock.recvfrom(1024)
                     server_dict = json.loads(data.decode('utf-8'))
-                    
-                    # Evitar duplicados revisando IPs
-                    if not any(s["ip"] == server_dict["ip"] for s in self.discovered_servers):
-                        self.discovered_servers.append(server_dict)
-                        logger.info(f"Sala descubierta en LAN: {server_dict['name']} en {server_dict['ip']}")
+
+                    if not isinstance(server_dict, dict):
+                        continue
+
+                    # La IP de origen evita que varios anuncios con una IP
+                    # publicada como 127.0.0.1 se consideren la misma sala.
+                    server_dict["ip"] = addr[0]
+                    server_key = (server_dict.get("ip"), server_dict.get("port"))
+                    with self._servers_lock:
+                        already_seen = any(
+                            (server.get("ip"), server.get("port")) == server_key
+                            for server in self.discovered_servers
+                        )
+                        if not already_seen:
+                            self.discovered_servers.append(server_dict)
+                            logger.info(f"Sala descubierta en LAN: {server_dict.get('name', '?')} en {server_dict.get('ip', '?')}")
                 except socket.timeout:
                     continue
                 except Exception as e:

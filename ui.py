@@ -669,7 +669,7 @@ class UIManager:
 
         # Misma ventanita que los demás menús (crear/unirse).
         box_width = 600
-        box_height = 280
+        box_height = 380
         box_x = self.SCREEN_WIDTH // 2 - box_width // 2
         box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 + 60
 
@@ -685,9 +685,9 @@ class UIManager:
         list_w = 460
         list_x = box_x + (box_width - list_w) // 2
         list_y = box_y + 46
-        bar_h = 40
-        bar_gap = 8
-        max_visible = 4
+        bar_h = 38
+        bar_gap = 6
+        max_visible = 5
 
         self.server_list_bar_rects = []  # se recalcula cada frame, usado por el click handler
 
