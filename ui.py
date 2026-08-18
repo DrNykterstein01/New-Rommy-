@@ -543,6 +543,12 @@ class UIManager:
         self.num_bots_input_box = InputBox(0, 0, ib_w, ib_h, smaller_font, text="")
         self.join_player_input_box = InputBox(0, 0, ib_w, ib_h, smaller_font)
         self.join_password_input_box = InputBox(0, 0, ib_w, ib_h, smaller_font)
+        # Conexión manual por IP: para cuando el descubrimiento automático
+        # (broadcast UDP) no llega, típicamente porque se está jugando por
+        # una VPN tipo Hamachi en vez de la misma LAN física. El puerto es
+        # opcional -si se deja vacío, se usa el puerto TCP por defecto-.
+        self.join_ip_manual_input = InputBox(0, 0, ib_w, ib_h, smaller_font)
+        self.join_port_manual_input = InputBox(0, 0, ib_w, ib_h, smaller_font)
         self.message_input_box = InputBox(0, 0, ib_w, ib_h, smaller_font)
         self.bot_room_name_input = InputBox(0, 0, ib_w, ib_h, smaller_font)
 
@@ -726,9 +732,9 @@ class UIManager:
         smaller_font = self.get_font(20)
 
         box_width = self._s(600)
-        box_height = self._s(280)
+        box_height = self._s(360)
         box_x = self.SCREEN_WIDTH // 2 - box_width // 2
-        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 + self._s(60)
+        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 + self._s(40)
 
         cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_width, box_height))
         self.SCREEN.blit(cuadro_surf, (box_x, box_y))
@@ -768,7 +774,7 @@ class UIManager:
 
         now = pygame.time.get_ticks()
         msg_x = input_x + input_w // 2 + self._s(70)
-        msg_y = box_y + self._s(150)
+        msg_y = box_y + self._s(75)
 
         resp = (getattr(self, "response", "") or "").strip()
         resp_l = resp.lower()
@@ -822,10 +828,41 @@ class UIManager:
         self.join_password_input_box.rect.topleft = (input_x, box_y + self._s(140))
         self.join_password_input_box.rect.size = (input_w, self._s(40))
 
+        # --- Conexión manual por IP (para VPN tipo Hamachi, donde el
+        # descubrimiento automático por broadcast no cruza la red virtual). ---
+        separador_y = box_y + self._s(195)
+        pygame.draw.line(
+            self.SCREEN, (120, 120, 120),
+            (box_x + self._s(30), separador_y), (box_x + box_width - self._s(30), separador_y), 1
+        )
+        manual_hint = self.get_font(14).render("¿Jugando por Hamachi u otra VPN? Conéctate directo por IP:", True, "#a0a0a0")
+        manual_hint_rect = manual_hint.get_rect(centerx=box_x + box_width // 2, y=separador_y + self._s(6))
+        self.SCREEN.blit(manual_hint, manual_hint_rect)
+
+        ip_manual_label = smaller_font.render("IP:", True, "#d7fcd4")
+        ip_manual_label_rect = ip_manual_label.get_rect()
+        ip_manual_label_rect.right = input_x - self._s(8)
+        ip_manual_label_rect.centery = box_y + self._s(258)
+        self.SCREEN.blit(ip_manual_label, ip_manual_label_rect)
+        self.join_ip_manual_input.draw(self.SCREEN)
+        self.join_ip_manual_input.rect.topleft = (input_x, box_y + self._s(238))
+        self.join_ip_manual_input.rect.size = (int(input_w * 0.65), self._s(40))
+
+        port_manual_label = smaller_font.render("Puerto:", True, "#d7fcd4")
+        port_x = input_x + int(input_w * 0.65) + self._s(10)
+        port_manual_label_rect = port_manual_label.get_rect()
+        port_manual_label_rect.right = port_x + self._s(60)
+        port_manual_label_rect.centery = box_y + self._s(258)
+        self.SCREEN.blit(port_manual_label, port_manual_label_rect)
+        self.join_port_manual_input.draw(self.SCREEN)
+        self.join_port_manual_input.rect.topleft = (port_x + self._s(65), box_y + self._s(238))
+        self.join_port_manual_input.rect.size = (int(input_w * 0.35) - self._s(65), self._s(40))
+        
+
         if hasattr(self, "JOIN_IP_BUTTON") and self.JOIN_IP_BUTTON:
             gap_btn = self._s(12)
             btn_w, btn_h = self.JOIN_IP_BUTTON.rect.size
-            pwd_top = box_y + self._s(140)
+            pwd_top = box_y + self._s(238)
             pwd_h = self._s(40)
             btn_x = rectNameServer.centerx
             btn_y = pwd_top + pwd_h + gap_btn + btn_h // 2
@@ -1520,21 +1557,46 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
                         self.response = ''
                     elif self.JOIN_IP_BUTTON.checkForInput(event.pos):  # Botón "conectar"
                         password = self.join_password_input_box.text  # Obtiene la contraseña
-                        if self.selectedServer:
-                            self.selectedServer['password'] = password
+                        playerName = self.join_player_input_box.text or "Jugador"
+
+                        ip_manual = self.join_ip_manual_input.text.strip()
+                        objetivo = None
+                        if ip_manual:
+                            # Conexión manual: no depende de haber elegido una
+                            # sala en el navegador -pensado para cuando el
+                            # descubrimiento automático no cruza la red (p.
+                            # ej. jugando por Hamachi u otra VPN en vez de la
+                            # misma LAN física)-. El puerto es opcional: si
+                            # se deja vacío, se usa el puerto TCP por defecto.
+                            puerto_texto = self.join_port_manual_input.text.strip()
+                            try:
+                                puerto_manual = int(puerto_texto) if puerto_texto else self.network_manager.config.TCP_PORT
+                            except ValueError:
+                                puerto_manual = self.network_manager.config.TCP_PORT
+                            objetivo = {
+                                "ip": ip_manual,
+                                "port": puerto_manual,
+                                "name": "Conexión manual",
+                                "password": password,
+                                "playerName": playerName,
+                                "currentPlayers": 0,
+                                "max_players": 0,
+                            }
+                        elif self.selectedServer:
+                            objetivo = self.selectedServer
+                            objetivo['password'] = password
                             if self.join_player_input_box.text != "":
                                 playerName = self.join_player_input_box.text  
                             else:  
                                 playerName = f"Jugador {self.selectedServer['currentPlayers']}"  # Valor por defecto
-                            
-                            self.selectedServer['playerName'] = playerName
+                            objetivo['playerName'] = playerName
                             pygame.display.update()
-                            
-                            print(f"Esto esta en el Server {self.selectedServer}")
-                        if self.selectedServer:
-                            acep, resp = self.network_manager.connectToServer(self.selectedServer)
+                            print(f"Esto esta en el Server {objetivo}")
+
+                        if objetivo:
+                            acep, resp = self.network_manager.connectToServer(objetivo)
                             if acep:
-                                self.selectedServer['currentPlayers'] += 1 
+                                objetivo['currentPlayers'] = objetivo.get('currentPlayers', 0) + 1
                                 print(f"Info de connectToServer  {(acep,resp)}")
                                 print("ClaveCorrecta.... Probando")
                                 self.current_screen = "lobby"
@@ -1670,6 +1732,8 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
             if self.current_screen == "join":
                 self.join_player_input_box.handle_event(event)
                 self.join_password_input_box.handle_event(event)
+                self.join_port_manual_input.handle_event(event)
+                self.join_ip_manual_input.handle_event(event)
             elif self.current_screen == "create":
                 self.host_input_box.handle_event(event)
                 self.name_input_box.handle_event(event)
