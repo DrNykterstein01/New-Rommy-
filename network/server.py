@@ -38,15 +38,31 @@ class GameServer:
             # Socket TCP
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_socket.bind(("0.0.0.0", self.config.TCP_PORT))
+            # OJO: antes esto se anclaba SIEMPRE al mismo puerto fijo
+            # (self.config.TCP_PORT), así que dos salas corriendo en la
+            # MISMA máquina competían por el mismo puerto TCP -con
+            # SO_REUSEADDR, en algunos sistemas (notablemente Windows) el
+            # segundo bind() "parecía" funcionar sin error, pero las
+            # conexiones entrantes en realidad solo llegaban al primer
+            # servidor que lo ocupó, sin importar a cuál sala se intentara
+            # conectar el cliente-. Usar puerto 0 le pide al sistema
+            # operativo un puerto libre real, garantizando que cada sala
+            # tenga su propio puerto exclusivo.
+            self.server_socket.bind(("0.0.0.0", 0))
             self.server_socket.listen(max_players)
-            
-            logger.info(f"Servidor iniciado en puerto {self.config.TCP_PORT}")
+
+            actual_port = self.server_socket.getsockname()[1]
+            # Se guarda el puerto REAL para que discovery.py lo anuncie en
+            # el broadcast (en vez del puerto fijo de config), y para que
+            # los clientes se conecten al puerto correcto de esta sala.
+            self.state.port = actual_port
+
+            logger.info(f"Servidor iniciado en puerto {actual_port}")
             
             # Agregar HOST a lista de jugadores
             host_player = ConnectedPlayer(
                 conn=self.server_socket,
-                addr=("localhost", self.config.TCP_PORT),
+                addr=("localhost", actual_port),
                 name=player_name,
                 player_id=1,
                 is_host=True

@@ -1390,6 +1390,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
         # participan en el reparto y en el cálculo de puntos como cualquier
         # otro jugador, porque AIBot hereda de Player.)
         num_bots = getattr(network_manager, 'num_bots', 0)
+        # "Sala de Bots": duelo 1vs1 contra un bot ESPECÍFICO elegido por el
+        # usuario (LouisBot o GeniBot), cada uno con su propio archivo .pt.
+        # Si no viene seteado, se usa el comportamiento genérico de siempre
+        # (num_bots bots llamados "LouisBot", cargando aibot_selfplay.pt).
+        bot_duel_config = getattr(network_manager, 'bot_duel_config', None)
         if num_bots > 0:
             from AIBot import AIBot
             try:
@@ -1408,11 +1413,20 @@ def main(manager_de_red): # <-- Acepta el manager de red
             # simplemente juega con su heurística base en vez de la red
             # entrenada, en lugar de romper la partida-.
             total_players_final = len(players) + num_bots
-            model_path = os.path.join(os.path.dirname(__file__), "aibot_selfplay.pt")
             bot_id_base = 1000  # bien por encima de cualquier player_id real (1, 2, 3...)
 
             for i in range(num_bots):
-                bot = AIBot(bot_id_base + i, "LouisBot")
+                if bot_duel_config and num_bots == 1:
+                    # Duelo específico desde "Sala de Bots".
+                    bot_name = bot_duel_config.get('name', 'LouisBot')
+                    model_filename = bot_duel_config.get('model_file', f"{bot_name}.pt")
+                else:
+                    # Comportamiento genérico existente (crear sala + bots).
+                    bot_name = "LouisBot"
+                    model_filename = "LouisBot.pt"
+
+                model_path = os.path.join(os.path.dirname(__file__), model_filename)
+                bot = AIBot(bot_id_base + i, bot_name)
                 try:
                     dummy_players_info = [{'hand_size': 0} for _ in range(total_players_final)]
                     dummy_state = bot.encode_state(None, 0, dummy_players_info, 1, phase=0)
@@ -1421,13 +1435,13 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     bot.load_rl_model(model_path)
                     if bot.rl_enabled and os.path.exists(model_path):
                         bot.rl_epsilon = 0.0  # sin exploración aleatoria: juega lo mejor que aprendió
-                        print(f"[BOTS] {bot.playerName}: modelo entrenado cargado correctamente.")
+                        print(f"[BOTS] {bot.playerName}: modelo entrenado ({model_filename}) cargado correctamente.")
                     else:
                         bot.rl_enabled = False
-                        print(f"[BOTS] {bot.playerName}: sin modelo entrenado disponible, jugará con la heurística base.")
+                        print(f"[BOTS] {bot.playerName}: no se encontró '{model_filename}', jugará con la heurística base.")
                 except Exception as e:
                     bot.rl_enabled = False
-                    print(f"[BOTS] {bot.playerName}: no se pudo cargar el modelo entrenado ({e}). "
+                    print(f"[BOTS] {bot.playerName}: no se pudo cargar '{model_filename}' ({e}). "
                           f"Probablemente esta partida tiene distinta cantidad de jugadores a la del "
                           f"entrenamiento. Jugará con la heurística base igualmente.")
                 players.append(bot)
@@ -1435,10 +1449,18 @@ def main(manager_de_red): # <-- Acepta el manager de red
             print(f"[BOTS] Se agregaron {num_bots} bot(s) a la partida. Total de jugadores: {len(players)}")
             if len(players) == 2 and num_bots == 1:
                 try:
-                    from volumen import ControlVolumen
-                    pygame.mixer.music.load(resource_path("assets/sonido/LouisBot3.mp3"))
-                    pygame.mixer.music.play(-1)
-                    ctrl_volumen=ControlVolumen()
+                    if any(hasattr(p, 'is_ai') and p.playerName == "LouisBot" for p in players):
+                        print("[BOTS] Se detectó duelo 1vs1 contra LouisBot. Cargando sonidos de voz...")
+                        #from volumen import ControlVolumen
+                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot3.mp3"))
+                        pygame.mixer.music.play(-1)
+                        ctrl_volumen=ControlVolumen()
+                    elif any(hasattr(p, 'is_ai') and p.playerName == "GeniBot" for p in players):
+                        print("[BOTS] Se detectó duelo 1vs1 contra LouisBot. Cargando sonidos de voz...")
+                        #from volumen import ControlVolumen
+                        pygame.mixer.music.load(resource_path("assets/sonido/GeniBot1.mp3"))
+                        pygame.mixer.music.play(-1)
+                        ctrl_volumen=ControlVolumen()
                 except Exception as e:
                     print("NO SE PUDO INICIALIZAR LA MÚSICA")
                     print({e})
@@ -1520,33 +1542,48 @@ def main(manager_de_red): # <-- Acepta el manager de red
 
     #contJugador = 0
     #contHost = 0
-    try:
-        voz_turno_path = os.path.join(ASSETS_PATH, "sonido", "turn1.wav")
-        voz_turno = pygame.mixer.Sound(voz_turno_path)
-        voz_bajarse_path = os.path.join(ASSETS_PATH, "sonido", "down.wav")
-        voz_bajarse = pygame.mixer.Sound(voz_bajarse_path)
-        voz_end_path = os.path.join(ASSETS_PATH, "sonido", "end.wav")
-        voz_end = pygame.mixer.Sound(voz_end_path)
-        voz_insert_path = os.path.join(ASSETS_PATH, "sonido", "insert.wav")
-        voz_insert = pygame.mixer.Sound(voz_insert_path)
-        voz_substitute_path = os.path.join(ASSETS_PATH, "sonido", "substitute.wav")
-        voz_substitute = pygame.mixer.Sound(voz_substitute_path)
-        voz_winner1_path = os.path.join(ASSETS_PATH, "sonido", "winner1.wav")
-        voz_winner1 = pygame.mixer.Sound(voz_winner1_path)
-        voz_winner2_path = os.path.join(ASSETS_PATH, "sonido", "winner2.wav")
-        voz_winner2 = pygame.mixer.Sound(voz_winner2_path)
-        voz_winner3_path = os.path.join(ASSETS_PATH, "sonido", "winner3.wav")
-        voz_winner3 = pygame.mixer.Sound(voz_winner3_path)
-    except Exception as e:
-        print("ERROR AL CARGAR LAS VOCES DEL BOT", e)
-        voz_turno = None
-        voz_bajarse = None
-        voz_end = None
-        voz_insert = None
-        voz_substitute = None
-        voz_winner1 = None
-        voz_winner2 = None
-        voz_winner3 = None
+    if len(players) == 2 and any(hasattr(p, 'is_ai') for p in players):
+        try:
+            if any(hasattr(p, 'is_ai') and p.playerName == "LouisBot" for p in players):
+                voz_turno_path = os.path.join(ASSETS_PATH, "sonido/LouisBot", "turn1.wav")
+                voz_turno = pygame.mixer.Sound(voz_turno_path)
+                voz_bajarse_path = os.path.join(ASSETS_PATH, "sonido/LouisBot", "down.wav")
+                voz_bajarse = pygame.mixer.Sound(voz_bajarse_path)
+                voz_end_path = os.path.join(ASSETS_PATH, "sonido/LouisBot", "end.wav")
+                voz_end = pygame.mixer.Sound(voz_end_path)
+                voz_insert_path = os.path.join(ASSETS_PATH, "sonido/LouisBot", "insert.wav")
+                voz_insert = pygame.mixer.Sound(voz_insert_path)
+                voz_substitute_path = os.path.join(ASSETS_PATH, "sonido/LouisBot", "substitute.wav")
+                voz_substitute = pygame.mixer.Sound(voz_substitute_path)
+                voz_winner1_path = os.path.join(ASSETS_PATH, "sonido/LouisBot", "winner1.wav")
+                voz_winner1 = pygame.mixer.Sound(voz_winner1_path)
+                voz_winner2_path = os.path.join(ASSETS_PATH, "sonido/LouisBot", "winner2.wav")
+                voz_winner2 = pygame.mixer.Sound(voz_winner2_path)
+                voz_winner3_path = os.path.join(ASSETS_PATH, "sonido/LouisBot", "winner3.wav")
+                voz_winner3 = pygame.mixer.Sound(voz_winner3_path)
+            elif any(hasattr(p, 'is_ai') and p.playerName == "GeniBot" for p in players):
+                voz_turno_path = os.path.join(ASSETS_PATH, "sonido/GeniBot", "turn.wav")
+                voz_turno = pygame.mixer.Sound(voz_turno_path)
+                voz_bajarse_path = os.path.join(ASSETS_PATH, "sonido/GeniBot", "down.wav")
+                voz_bajarse = pygame.mixer.Sound(voz_bajarse_path)
+                voz_end_path = os.path.join(ASSETS_PATH, "sonido/GeniBot", "end.wav")
+                voz_end = pygame.mixer.Sound(voz_end_path)
+                voz_insert_path = os.path.join(ASSETS_PATH, "sonido/GeniBot", "insert.wav")
+                voz_insert = pygame.mixer.Sound(voz_insert_path)
+                voz_substitute_path = os.path.join(ASSETS_PATH, "sonido/GeniBot", "substitute.wav")
+                voz_substitute = pygame.mixer.Sound(voz_substitute_path)
+                voz_winner1_path = os.path.join(ASSETS_PATH, "sonido/GeniBot", "winner.wav")
+                voz_winner = pygame.mixer.Sound(voz_winner1_path)
+        except Exception as e:
+            print("ERROR AL CARGAR LAS VOCES DEL BOT", e)
+            voz_turno = None
+            voz_bajarse = None
+            voz_end = None
+            voz_insert = None
+            voz_substitute = None
+            voz_winner1 = None
+            voz_winner2 = None
+            voz_winner3 = None
         
 
     # Variables para manejar el ciclo de compra. 
@@ -2259,6 +2296,13 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 bot_turno_estado["t"] = time.time() + BOT_DELAY_PENSAR
                 bot_turno_estado["intentos_insercion"] = 0
 
+                # La voz de "es tu turno" del bot debe sonar apenas el juego
+                # determina que le toca a él -no cuando el humano descarta-,
+                # así que se dispara justo aquí, en el mismo instante en que
+                # se detecta el inicio de un turno nuevo del bot.
+                if len(players) == 2 and any(hasattr(p, "is_ai") for p in players) and voz_turno:
+                    voz_turno.play()
+
 
             ahora = time.time()
             accion = bot_turno_estado.get("fase_accion")
@@ -2750,47 +2794,47 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     continue   # no procesar más clics en este frame
                 # ─────────────────────────────────────────────────────────────
 
-                # ── [DEV TOOL] BOTÓN CONCLUIR RONDA — solo visible para el Host ──
-                if network_manager.is_host and jugador_local:
-                    _btn_dev_rect = pygame.Rect(WIDTH - 190, HEIGHT - 205, 170, 40)
-                    if _btn_dev_rect.collidepoint(mouse_x, mouse_y):
-                        resultado_dev = _dev_cargar_mano_ganadora(
-                            jugador_local, visual_hand,
-                            cuadros_interactivos, cartas_ref,
-                            roundOne, roundTwo, roundThree, roundFour
-                        )
-                        # ── Reconstrucción visual completa (inline para tener acceso
-                        #    a todas las variables locales de main) ──────────────────
-                        # 1. Limpiar estado de arrastre
-                        dragging = False
-                        carta_arrastrada = None
-                        drag_rect = None
-                        drag_offset_x = 0
-                        # 2. Limpiar cartas ocultas (índices del orden anterior)
-                        cartas_ocultas.clear()
-                        # 3. Limpiar zonas de jugada (no afecta cartas de la mesa de otros)
-                        zona_cartas[0].clear()
-                        zona_cartas[1].clear()
-                        if roundThree or roundFour:
-                            zona_cartas[2].clear()
-                        # 4. Reconstruir visual_hand desde playerHand sin conservar
-                        #    orden anterior (la mano es completamente nueva)
-                        visual_hand.clear()
-                        visual_hand.extend(jugador_local.playerHand)
-                        for idx_v, c_v in enumerate(visual_hand):
-                            c_v.id_visual = idx_v
-                        # 5. Limpiar cuadros_interactivos de Carta_X obsoletos
-                        claves_cartas = [k for k in cuadros_interactivos if k.startswith("Carta_")]
-                        for k in claves_cartas:
-                            del cuadros_interactivos[k]
-                        cartas_ref.clear()
-                        # 6. Habilitar organización
-                        organizar_habilitado = True
-                        # ─────────────────────────────────────────────────────
-                        mensaje_temporal = resultado_dev
-                        mensaje_tiempo = time.time()
-                        continue  # no procesar más clics en este frame
-                # ────────────────────────────────────────────────────────────────
+                # # ── [DEV TOOL] BOTÓN CONCLUIR RONDA — solo visible para el Host ──
+                # if network_manager.is_host and jugador_local:
+                    # _btn_dev_rect = pygame.Rect(WIDTH - 190, HEIGHT - 205, 170, 40)
+                    # if _btn_dev_rect.collidepoint(mouse_x, mouse_y):
+                        # resultado_dev = _dev_cargar_mano_ganadora(
+                            # jugador_local, visual_hand,
+                            # cuadros_interactivos, cartas_ref,
+                            # roundOne, roundTwo, roundThree, roundFour
+                        # )
+                        # # ── Reconstrucción visual completa (inline para tener acceso
+                        # #    a todas las variables locales de main) ──────────────────
+                        # # 1. Limpiar estado de arrastre
+                        # dragging = False
+                        # carta_arrastrada = None
+                        # drag_rect = None
+                        # drag_offset_x = 0
+                        # # 2. Limpiar cartas ocultas (índices del orden anterior)
+                        # cartas_ocultas.clear()
+                        # # 3. Limpiar zonas de jugada (no afecta cartas de la mesa de otros)
+                        # zona_cartas[0].clear()
+                        # zona_cartas[1].clear()
+                        # if roundThree or roundFour:
+                            # zona_cartas[2].clear()
+                        # # 4. Reconstruir visual_hand desde playerHand sin conservar
+                        # #    orden anterior (la mano es completamente nueva)
+                        # visual_hand.clear()
+                        # visual_hand.extend(jugador_local.playerHand)
+                        # for idx_v, c_v in enumerate(visual_hand):
+                            # c_v.id_visual = idx_v
+                        # # 5. Limpiar cuadros_interactivos de Carta_X obsoletos
+                        # claves_cartas = [k for k in cuadros_interactivos if k.startswith("Carta_")]
+                        # for k in claves_cartas:
+                            # del cuadros_interactivos[k]
+                        # cartas_ref.clear()
+                        # # 6. Habilitar organización
+                        # organizar_habilitado = True
+                        # # ─────────────────────────────────────────────────────
+                        # mensaje_temporal = resultado_dev
+                        # mensaje_tiempo = time.time()
+                        # continue  # no procesar más clics en este frame
+                # # ────────────────────────────────────────────────────────────────
 
                 # 1. Intentar levantar de las zonas de juego (Trios/Seguidillas)
                 # Excluimos el índice de descarte definido arriba
@@ -3630,9 +3674,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                                 last_taken_player = None
                                 clear_taken_card_for_player(jugador_local)
                                 jugador_local.isHand = False
-                                if len(players) == 2 and any(p.playerName == "LouisBot" and hasattr(p, "is_ai") for p in players):
-                                    voz_turno.play()
-                                
+
                                 reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
                                 
                                 visual_hand[:] = [c for c in visual_hand if c not in cartas_en_zonas_visuales]
@@ -4918,15 +4960,17 @@ def main(manager_de_red): # <-- Acepta el manager de red
             )
 
         # 5. Botón "CONCLUIR RONDA" — visible solo para el host
-        if network_manager.is_host and jugador_local:
-            btn_concluir_ronda = pygame.Rect(WIDTH - 190, HEIGHT - 205, 170, 40)
-            draw_simple_button(
-                screen, btn_concluir_ronda, "Terminar ronda",
-                get_game_font(10),
-                bg=(130, 40, 40),
-                fg=(255, 255, 255)
-            )
-            cuadros_interactivos["Concluir ronda"] = btn_concluir_ronda
+        # DESACTIVADO a pedido: se comenta en vez de borrar, por si se
+        # quiere reactivar más adelante.
+        # if network_manager.is_host and jugador_local:
+        #     btn_concluir_ronda = pygame.Rect(WIDTH - 190, HEIGHT - 205, 170, 40)
+        #     draw_simple_button(
+        #         screen, btn_concluir_ronda, "Terminar ronda",
+        #         get_game_font(10),
+        #         bg=(130, 40, 40),
+        #         fg=(255, 255, 255)
+        #     )
+        #     cuadros_interactivos["Concluir ronda"] = btn_concluir_ronda
 
         # Intercambiar SÓLO las zonas interactivas: "Descarte" <-> "ZonaCentralInteractiva".
         # Esto cambia solo el mapeo interactivo (donde se debe soltar una carta), no afecta el dibujo.
@@ -6097,12 +6141,15 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         aplausos_sound.play()
                         pygame.mixer.music.fadeout(4000)
                         pygame.mixer.music.stop()
-                        if hasattr(jugador, "is_ai"):
+                        if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             # Pequeña pausa para que la voz de la última acción
                             # del bot (fin de turno / inserción / etc.) no se
                             # encime con la voz de "ganador".
                             pygame.time.wait(1000)
                             voz_winner1.play()
+                        elif hasattr(jugador, "is_ai") and jugador.playerName == "GeniBot":
+                            pygame.time.wait(1000)
+                            voz_winner.play()
                         fase = "fin1"
                         fase_fin_tiempo = time.time()
                         break
@@ -6139,8 +6186,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     fase = "eleccion"
                     roundOne = False
                     roundTwo = True   # Para Prueba
-                    pygame.mixer.music.load(resource_path("assets/sonido/LouisBot2.mp3"))
-                    pygame.mixer.music.play(-1)
+                    if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
+                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot2.mp3"))
+                        pygame.mixer.music.play(-1)
+                    elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
+                        pygame.mixer.music.load(resource_path("assets/sonido/GeniBot2.mp3"))
+                        pygame.mixer.music.play(-1)
             continue
         
         if fase == "ronda2":
@@ -6154,9 +6205,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         aplausos_sound.play()
                         pygame.mixer.music.fadeout(4000)
                         pygame.mixer.music.stop()
-                        if hasattr(jugador, "is_ai"):
+                        if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
                             voz_winner2.play()
+                        elif hasattr(jugador, "is_ai") and jugador.playerName == "GeniBot":
+                            pygame.time.wait(1000)
+                            voz_winner.play()
                         fase = "fin2"
                         fase_fin_tiempo = time.time()
                         break
@@ -6191,7 +6245,11 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         fase = "eleccion"
                         roundTwo = False
                         roundThree = True
+                    if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
                         pygame.mixer.music.load(resource_path("assets/sonido/LouisBot1.mp3"))
+                        pygame.mixer.music.play(-1)
+                    elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
+                        pygame.mixer.music.load(resource_path("assets/sonido/GeniBot3.mp3"))
                         pygame.mixer.music.play(-1)
                 continue
 
@@ -6206,9 +6264,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         aplausos_sound.play()
                         pygame.mixer.music.fadeout(4000)
                         pygame.mixer.music.stop()
-                        if hasattr(jugador, "is_ai"):
+                        if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
-                            voz_winner3.play()                    
+                            voz_winner3.play() 
+                        elif hasattr(jugador, "is_ai") and jugador.playerName == "GeniBot":
+                            pygame.time.wait(1000)
+                            voz_winner.play()                   
                         fase = "fin3"
                         fase_fin_tiempo = time.time()
                         break
@@ -6243,8 +6304,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         fase = "eleccion"
                         roundThree = False
                         roundFour = True
-                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot4.mp3"))
-                        pygame.mixer.music.play(-1)
+                        if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
+                            pygame.mixer.music.load(resource_path("assets/sonido/LouisBot4.mp3"))
+                            pygame.mixer.music.play(-1)
+                        elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
+                            pygame.mixer.music.load(resource_path("assets/sonido/GeniBot4.mp3"))
+                            pygame.mixer.music.play(-1)
                 continue
 
         if fase == "ronda4":
@@ -6259,9 +6324,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         jugador.isHand = False
                         pygame.mixer.music.fadeout(4000)
                         pygame.mixer.music.stop()
-                        if hasattr(jugador, "is_ai"):
+                        if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
                             voz_winner3.play()
+                        elif hasattr(jugador, "is_ai") and jugador.playerName == "GeniBot":
+                            pygame.time.wait(1000)
+                            voz_winner.play()
                         fase = "fin4"
                         fase_fin_tiempo = time.time()
                         break
@@ -6295,8 +6363,12 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         fase = "eleccion"
                         roundFour = False
                         roundOne = True
-                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot3.mp3"))
-                        pygame.mixer.music.play(-1)
+                        if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
+                            pygame.mixer.music.load(resource_path("assets/sonido/LouisBot3.mp3"))
+                            pygame.mixer.music.play(-1)
+                        elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
+                            pygame.mixer.music.load(resource_path("assets/sonido/GeniBot1.mp3"))
+                            pygame.mixer.music.play(-1)
                 continue
 
         if fase == "game_over":

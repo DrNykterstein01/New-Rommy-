@@ -1,4 +1,5 @@
 import logging
+import time
 
 from .transport import Transport
 from .server import GameServer
@@ -26,6 +27,9 @@ class NetworkManager:
         # (0 = sin bots). ui.py lo asigna al crear la sala; ui2.py lo lee al
         # armar la lista de jugadores de la partida.
         self.num_bots = 0
+        # Configuración de duelo 1vs1 desde "Sala de Bots": {'name': ..., 'model_file': ...}
+        # o None si esta partida no es un duelo contra un bot específico.
+        self.bot_duel_config = None
     
     # === Métodos públicos (INTERFAZ COMPATIBLE) ===
     
@@ -104,6 +108,33 @@ class NetworkManager:
                 pass
         
         logger.info("NetworkManager detenido")
+
+    def leave_room(self, wait_seconds: float = 0.2):
+        """
+        Sale de la sala actual (como host o como cliente) y deja todo listo
+        para poder unirse a una sala DISTINTA sin arrastrar datos de la
+        anterior. stop() por sí solo no era suficiente: solo cerraba
+        sockets, pero dejaba vivos el player_id, la lista de jugadores
+        conectados, los mensajes en cola sin procesar, etc. -eso podía
+        hacer que, al unirte a una sala nueva, la conexión se comportara
+        como si siguiera atada a la sala anterior-.
+
+        wait_seconds: pequeña pausa antes de resetear el estado, para darle
+        tiempo a los hilos en segundo plano (recepción del cliente, servidor)
+        a notar running=False y salir de su bucle antes de que sus
+        referencias a self.state cambien por debajo.
+        """
+        self.stop()
+        self.stop_broadcast()
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        with self.discovery._servers_lock:
+            self.discovery.discovered_servers = []
+        if hasattr(self, "_current_server"):
+            self._current_server = None
+        self.num_bots = 0
+        self.state.reset()
+        logger.info("Sala abandonada, estado de red reiniciado por completo.")
     
     # === Getters de estado (INTERFAZ COMPATIBLE) ===
     

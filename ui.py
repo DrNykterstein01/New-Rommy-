@@ -185,13 +185,13 @@ class UIManager:
         self.last_time = pygame.time.get_ticks()
         self.init_components()
 
-        self.servers = []
-        self.selectedServer = None
-        self.isSeletedServer = False
-        self.response = None
+        self.servers = []      #Lista de servidores encontrados
+        self.selectedServer = None  #ALmacena el servidor selecionado
+        self.isSeletedServer = False #Fija el servidor seleccionado
+        self.response = None #Resuesta de conexion para el jugador
         self.is_hovered = None
-        self.messages = []
-        self.chatLock = threading.Lock()
+        self.messages = []    #Mensajes para el Chat
+        self.chatLock = threading.Lock() 
         self.playGamePlayer = False
         #-----------------------------------
         # Navegador de salas (menú "server_list"): índice del servidor
@@ -227,9 +227,35 @@ class UIManager:
             self.conectar_img = pygame.image.load(conectar_path).convert_alpha()
         except Exception:
             self.conectar_img = None
+
+        # --- Sala de Bots: assets opcionales (el usuario los agregará luego). ---
+        # Botón "Sala de Bots" (mismo estilo que los demás botones del menú).
+        # Ruta esperada: assets/sala_de_bots.png
+        try:
+            self.salabots_img = pygame.image.load(resource_path("assets/sala_de_bots.png")).convert_alpha()
+        except Exception:
+            self.salabots_img = None
+        # Fondo exclusivo de la pantalla "Sala de Bots".
+        # Ruta esperada: assets/bots_fondo.png
+        try:
+            self.bots_fondo_img_original = pygame.image.load(resource_path("assets/sala_de_bots_bg.jpg")).convert()
+        except Exception:
+            self.bots_fondo_img_original = None
+        # Caras de cada bot, mostradas dentro de su recuadro.
+        # Rutas esperadas: assets/louisbot_face.png y assets/genibot_face.png
+        try:
+            self.louisbot_face_img = pygame.image.load(resource_path("assets/louisbot.png")).convert_alpha()
+        except Exception:
+            self.louisbot_face_img = None
+        try:
+            self.genibot_face_img = pygame.image.load(resource_path("assets/genibot.png")).convert_alpha()
+        except Exception:
+            self.genibot_face_img = None
+
         self.titulo_img_original = pygame.image.load(os.path.join(assets_path, "titulo.png")).convert_alpha()
         self.fondo_img_original = pygame.image.load(os.path.join(assets_path, "fondo.png")).convert()
         self.cuadro_img = pygame.image.load(os.path.join(assets_path, "cuadro.png")).convert_alpha()
+        self.cuadro_bot_img = pygame.image.load(os.path.join(assets_path, "cuadro_bot.png")).convert_alpha()
         self.jugar_img = pygame.image.load(os.path.join(assets_path, "jugar_btn.png")).convert_alpha()
         self.reglas_img = pygame.image.load(os.path.join(assets_path, "reglas_btn.png")).convert_alpha()
         self.salir_img = pygame.image.load(os.path.join(assets_path, "salir_btn.png")).convert_alpha()
@@ -274,6 +300,10 @@ class UIManager:
 
         self.titulo_img = pygame.transform.scale(self.titulo_img_original, (int(self.SCREEN_WIDTH * 0.5), int(self.SCREEN_HEIGHT * 0.35)))
         self.fondo_img = pygame.transform.scale(self.fondo_img_original, (self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
+        if getattr(self, "bots_fondo_img_original", None) is not None:
+            self.bots_fondo_img = pygame.transform.scale(self.bots_fondo_img_original, (self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
+        else:
+            self.bots_fondo_img = None
 
         self.JUGAR_BUTTON = Button(
             image=self.jugar_img,
@@ -325,13 +355,33 @@ class UIManager:
             size=(self._s(250), self._s(100))
         )
 
+        self.SALA_BOTS_BUTTON = Button(
+            image=self.salabots_img,
+            pos=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT*0.70)),
+            text_input="" if self.salabots_img else "Sala de Bots",
+            font=self.get_font(40),
+            base_color="#d7fcd4",
+            hovering_color="White",
+            size=(self._s(260), self._s(85))
+        )
+
         self.PLAY_BACK = Button(
             image=self.volver_img,
-            pos=(self.SCREEN_WIDTH//2, self.SCREEN_HEIGHT * 0.75),
+            pos=(self.SCREEN_WIDTH//2, self.SCREEN_HEIGHT * 0.85),
             text_input="",
             font=self.get_font(75),
             base_color="White",
             hovering_color="Green"
+        )
+
+        self.BOT_ROOM_BACK_BUTTON = Button(
+            image=self.volver_img,
+            pos=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT * 0.90)),
+            text_input="",
+            font=self.get_font(75),
+            base_color="White",
+            hovering_color="Green",
+            size=(self._s(220), self._s(80))
         )
 
         small_font = self.get_font(30)
@@ -494,6 +544,7 @@ class UIManager:
         self.join_player_input_box = InputBox(0, 0, ib_w, ib_h, smaller_font)
         self.join_password_input_box = InputBox(0, 0, ib_w, ib_h, smaller_font)
         self.message_input_box = InputBox(0, 0, ib_w, ib_h, smaller_font)
+        self.bot_room_name_input = InputBox(0, 0, ib_w, ib_h, smaller_font)
 
     def update_animation(self, delta_time):
         self.angulo_izquierda = (self.angulo_izquierda + 50 * delta_time) % 360
@@ -523,10 +574,151 @@ class UIManager:
 
     def draw_play_menu(self):
         MENU_MOUSE_POS = pygame.mouse.get_pos()
-        for button in [self.UNIRSE_BUTTON, self.CREAR_BUTTON, self.PLAY_BACK]:
+        for button in [self.UNIRSE_BUTTON, self.CREAR_BUTTON, self.SALA_BOTS_BUTTON, self.PLAY_BACK]:
             button.check_hover(MENU_MOUSE_POS)
             button.update(self.SCREEN)
         return MENU_MOUSE_POS
+
+    def draw_bot_room_background(self):
+        """Fondo exclusivo de la pantalla 'Sala de Bots' (sin el título del menú principal)."""
+        if getattr(self, "bots_fondo_img", None) is not None:
+            self.SCREEN.blit(self.bots_fondo_img, (0, 0))
+        else:
+            # Sin asset propio todavía: usamos el fondo genérico como respaldo.
+            self.SCREEN.blit(self.fondo_img, (0, 0))
+
+    def draw_bot_room_menu(self):
+        MENU_MOUSE_POS = pygame.mouse.get_pos()
+
+        # --- Título "Sala de Bots" ---
+        title_font = self.get_font(55)
+        title_surf = title_font.render("Sala de Bots", True, "#d7fcd4")
+        title_rect = title_surf.get_rect(center=(self.SCREEN_WIDTH // 2, int(self.SCREEN_HEIGHT * 0.12)))
+        self.SCREEN.blit(title_surf, title_rect)
+
+        # --- Barra de input para el nombre del jugador ---
+        label_font = self.get_font(24)
+        label_surf = label_font.render("Tu nombre:", True, "#d7fcd4")
+        ib_w, ib_h = self._s(320), self._s(44)
+        input_x = self.SCREEN_WIDTH // 2 - ib_w // 2
+        input_y = int(self.SCREEN_HEIGHT * 0.22)
+        self.bot_room_name_input.rect.x = input_x
+        self.bot_room_name_input.rect.y = input_y
+        self.bot_room_name_input.rect.w = ib_w
+        self.bot_room_name_input.rect.h = ib_h
+        label_rect = label_surf.get_rect(midbottom=(self.SCREEN_WIDTH // 2, input_y - self._s(8)))
+        self.SCREEN.blit(label_surf, label_rect)
+        self.bot_room_name_input.draw(self.SCREEN)
+
+        # --- Recuadros de selección de bot (LouisBot / GeniBot) ---
+        frame_w, frame_h = self._s(220), self._s(230)
+        gap = self._s(120)
+        center_y = int(self.SCREEN_HEIGHT * 0.58)
+        louis_center = (self.SCREEN_WIDTH // 2 - gap // 2 - frame_w // 2, center_y)
+        gen_center = (self.SCREEN_WIDTH // 2 + gap // 2 + frame_w // 2, center_y)
+
+        name_font = self.get_font(26)
+
+        self.bot_room_louis_rect = pygame.Rect(0, 0, frame_w, frame_h)
+        self.bot_room_louis_rect.center = louis_center
+        self.bot_room_gen_rect = pygame.Rect(0, 0, frame_w, frame_h)
+        self.bot_room_gen_rect.center = gen_center
+
+        for rect, face_img, label in (
+            (self.bot_room_louis_rect, getattr(self, "louisbot_face_img", None), "LouisBot"),
+            (self.bot_room_gen_rect, getattr(self, "genibot_face_img", None), "GeniBot"),
+        ):
+            hovering = rect.collidepoint(MENU_MOUSE_POS)
+
+            # Marco (reutiliza el mismo asset "cuadro" usado en otras pantallas).
+            if getattr(self, "cuadro_bot_img", None) is not None:
+                cuadro_surf = pygame.transform.scale(self.cuadro_bot_img, (rect.w, rect.h))
+                self.SCREEN.blit(cuadro_surf, rect)
+            else:
+                pygame.draw.rect(self.SCREEN, (40, 40, 40), rect, border_radius=12)
+
+            border_color = (255, 255, 255) if hovering else (150, 150, 150)
+            pygame.draw.rect(self.SCREEN, border_color, rect, 3, border_radius=12)
+
+            # Cara del bot, centrada dentro del recuadro (si el asset existe).
+            if face_img is not None:
+                pad = self._s(18)
+                inner_w, inner_h = rect.w - pad * 2, rect.h - pad * 2
+                face_scaled = pygame.transform.smoothscale(face_img, (inner_w, inner_h))
+                face_rect = face_scaled.get_rect(center=rect.center)
+                self.SCREEN.blit(face_scaled, face_rect)
+            else:
+                placeholder = name_font.render("?", True, (200, 200, 200))
+                self.SCREEN.blit(placeholder, placeholder.get_rect(center=rect.center))
+
+            # Ligero "levantamiento" visual al pasar el mouse por encima.
+            if hovering:
+                glow = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+                glow.fill((255, 255, 255, 25))
+                self.SCREEN.blit(glow, rect)
+
+            label_surf = name_font.render(label, True, "#d7fcd4")
+            label_rect = label_surf.get_rect(midtop=(rect.centerx, rect.bottom + self._s(10)))
+            self.SCREEN.blit(label_surf, label_rect)
+
+        self.BOT_ROOM_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
+        self.BOT_ROOM_BACK_BUTTON.update(self.SCREEN)
+
+        return MENU_MOUSE_POS
+
+    def confirm_bot_duel(self, bot_display_name):
+        """Modal de confirmación '¿Enfrentarse a {bot}?' (mismo estilo que confirm_exit)."""
+        clock = pygame.time.Clock()
+        try:
+            snapshot = self.SCREEN.copy()
+        except Exception:
+            snapshot = pygame.Surface((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
+
+        overlay = pygame.Surface((self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+
+        w, h = self._s(560), self._s(260)
+        x = (self.SCREEN_WIDTH - w) // 2
+        y = (self.SCREEN_HEIGHT - h) // 2
+        modal_rect = pygame.Rect(x, y, w, h)
+
+        btn_w, btn_h = self._s(130), self._s(50)
+        btn_si = pygame.Rect(x + self._s(80), y + self._s(160), btn_w, btn_h)
+        btn_no = pygame.Rect(x + w - btn_w - self._s(80), y + self._s(160), btn_w, btn_h)
+
+        font_title = self.get_font(34)
+        font_text = self.get_font(20)
+
+        while True:
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    return False
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                    if btn_si.collidepoint(ev.pos):
+                        return True
+                    if btn_no.collidepoint(ev.pos):
+                        return False
+
+            self.SCREEN.blit(snapshot, (0, 0))
+            self.SCREEN.blit(overlay, (0, 0))
+
+            pygame.draw.rect(self.SCREEN, (40, 40, 40), modal_rect, border_radius=12)
+            pygame.draw.rect(self.SCREEN, (60, 140, 220), modal_rect, 3, border_radius=12)
+
+            title = font_title.render(f"¿Enfrentarse a {bot_display_name}?", True, (255, 255, 255))
+            title = title if title.get_width() <= w - self._s(40) else font_text.render(f"¿Enfrentarse a {bot_display_name}?", True, (255, 255, 255))
+            self.SCREEN.blit(title, (x + (w - title.get_width()) // 2, y + self._s(40)))
+
+            pygame.draw.rect(self.SCREEN, (50, 180, 50), btn_si, border_radius=8)
+            lbl_si = font_text.render("SÍ", True, (255, 255, 255))
+            self.SCREEN.blit(lbl_si, lbl_si.get_rect(center=btn_si.center))
+
+            pygame.draw.rect(self.SCREEN, (180, 50, 50), btn_no, border_radius=8)
+            lbl_no = font_text.render("NO", True, (255, 255, 255))
+            self.SCREEN.blit(lbl_no, lbl_no.get_rect(center=btn_no.center))
+
+            pygame.display.flip()
+            clock.tick(60)
 
     def draw_join_menu(self):
         self.servers = self.network_manager.servers
@@ -656,46 +848,62 @@ class UIManager:
         """
         Navegador de salas: misma ventanita (cuadro.png) y el mismo estilo de
         barra que ya se usa en draw_join_menu para el recuadro de la sala,
-        pero listando TODAS las salas encontradas en la red, cada una
-        clicable, con botones "Volver" y "Seleccionar" debajo.
+        pero listando TODAS las salas encontradas en la red, cada una en su
+        propio recuadro (uno debajo del otro), clicable, con botones
+        "Volver" y "Seleccionar" debajo.
+
+        OJO: network_manager.discoverServers() es asíncrono -lanza un hilo
+        que escucha broadcasts UDP durante unos segundos y va llenando
+        network_manager.servers poco a poco-, así que esta función tiene que
+        releer esa lista EN VIVO cada frame (igual que ya hace
+        draw_join_menu) para que las salas vayan apareciendo a medida que se
+        descubren, en vez de quedarse pegada en la lista vacía del instante
+        en que se abrió el menú.
         """
-        # Re-leer la lista en vivo cada frame, igual que hace draw_join_menu.
-        # discoverServers() devuelve None (descubre en un hilo en segundo
-        # plano), así que self.servers NO puede venir de ahí; hay que leer
-        # la propiedad .servers que expone la lista que ese hilo va llenando.
         self.servers = self.network_manager.servers
         MENU_MOUSE_POS = pygame.mouse.get_pos()
-        smaller_font = self.get_font(20)
 
-        # Misma ventanita que los demás menús (crear/unirse).
-        box_width = 600
-        box_height = 380
+        # Medidas relativas a la resolución de pantalla actual (no valores
+        # fijos en píxeles), para que se vea bien sin importar el tamaño de
+        # ventana de quien lo abra.
+        font_size = max(14, int(self.SCREEN_HEIGHT * 0.0225))
+        smaller_font = self.get_font(font_size)
+
+        box_width = int(self.SCREEN_WIDTH * 0.47)
+        max_visible = 6
+        bar_h = max(32, int(self.SCREEN_HEIGHT * 0.05))
+        bar_gap = max(6, int(self.SCREEN_HEIGHT * 0.012))
+        list_top_pad = int(self.SCREEN_HEIGHT * 0.09)
+        list_bottom_pad = int(self.SCREEN_HEIGHT * 0.05)
+
+        cantidad_a_mostrar = max(1, min(len(self.servers), max_visible)) if self.servers else 1
+        box_height = list_top_pad + cantidad_a_mostrar * bar_h + max(0, cantidad_a_mostrar - 1) * bar_gap + list_bottom_pad
+        box_height = max(box_height, int(self.SCREEN_HEIGHT * 0.32))  # nunca más chica que el mínimo original
+
         box_x = self.SCREEN_WIDTH // 2 - box_width // 2
-        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 + 60
+        box_y = self.SCREEN_HEIGHT // 2 - box_height // 2 + int(self.SCREEN_HEIGHT * 0.08)
 
         cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_width, box_height))
         self.SCREEN.blit(cuadro_surf, (box_x, box_y))
 
         titulo = smaller_font.render("Salas disponibles", True, "#d7fcd4")
-        titulo_rect = titulo.get_rect(centerx=box_x + box_width // 2, y=box_y + 12)
+        titulo_rect = titulo.get_rect(centerx=box_x + box_width // 2, y=box_y + int(self.SCREEN_HEIGHT * 0.018))
         self.SCREEN.blit(titulo, titulo_rect)
 
-        # Área de la lista (hasta 4 salas visibles a la vez, mismo ancho que
-        # los inputs de los otros menús para que se vea consistente).
-        list_w = 460
+        # Área de la lista, centrada dentro de la ventanita.
+        list_w = int(box_width * 0.8)
         list_x = box_x + (box_width - list_w) // 2
-        list_y = box_y + 46
-        bar_h = 38
-        bar_gap = 6
-        max_visible = 5
+        list_y = box_y + list_top_pad
 
         self.server_list_bar_rects = []  # se recalcula cada frame, usado por el click handler
 
         if not self.servers:
-            noServers = smaller_font.render("No hay salas disponibles :(", True, "#d7fcd4")
-            noServers_rect = noServers.get_rect(center=(box_x + box_width // 2, box_y + box_height // 2 - 20))
+            noServers = smaller_font.render("Buscando salas en la red...", True, "#d7fcd4")
+            noServers_rect = noServers.get_rect(center=(box_x + box_width // 2, box_y + box_height // 2))
             self.SCREEN.blit(noServers, noServers_rect)
         else:
+            # Un recuadro POR CADA sala encontrada, uno debajo del otro (hasta
+            # max_visible a la vez; si hay más, se muestran las primeras).
             for i, server in enumerate(self.servers[:max_visible]):
                 bar_rect = pygame.Rect(list_x, list_y + i * (bar_h + bar_gap), list_w, bar_h)
                 self.server_list_bar_rects.append(bar_rect)
@@ -728,7 +936,15 @@ class UIManager:
             alerta_rect = alerta.get_rect(center=(box_x + box_width // 2, list_y + max_visible * (bar_h + bar_gap) + 8))
             self.SCREEN.blit(alerta, alerta_rect)
 
-        # Botones Volver / Seleccionar (mismo diseño que los demás menús).
+        # Botones Volver / Seleccionar (mismo diseño que los demás menús),
+        # reposicionados justo debajo de la ventanita -que ahora puede
+        # cambiar de alto según cuántas salas haya-.
+        btn_y = box_y + box_height + int(self.SCREEN_HEIGHT * 0.06)
+        self.SERVER_LIST_BACK_BUTTON.x_pos = self.SCREEN_WIDTH // 2 - int(self.SCREEN_WIDTH * 0.08)
+        self.SERVER_LIST_BACK_BUTTON.y_pos = btn_y
+        self.SERVER_LIST_SELECT_BUTTON.x_pos = self.SCREEN_WIDTH // 2 + int(self.SCREEN_WIDTH * 0.08)
+        self.SERVER_LIST_SELECT_BUTTON.y_pos = btn_y
+
         self.SERVER_LIST_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
         self.SERVER_LIST_BACK_BUTTON.update(self.SCREEN)
         self.SERVER_LIST_SELECT_BUTTON.check_hover(MENU_MOUSE_POS)
@@ -1047,39 +1263,39 @@ Jugadores: 2 - 13
 Mazo: 52 cartas + 1 Joker.
 
 Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
-Cómo perder: El primer jugador en alcanzar o superar los 500 puntos es eliminado.
-Combinaciones:
-• Trío: Tres cartas del mismo valor (ej: QC, QD, QP).
-• Seguidilla: Cuatro cartas consecutivas del mismo palo (ej: 7T, 8T, 9T, 10T).
+\nCómo perder: El primer jugador en alcanzar o superar los 500 puntos es eliminado.
+\nCombinaciones:
+\n• Trío: Tres cartas del mismo valor (ej: Q♦, Q♥, Q♠).
+\n• Seguidilla: Cuatro cartas consecutivas del mismo palo (ej: 7♣, 8♣, 9♣, 10♣).
 
-Rondas de Juego:
-1. Trío y Seguidilla
-2. Dos Seguidillas
-3. Tres Tríos
-4. Una Seguidilla y Dos Tríos (Ronda Completa): Para finalizar esta ronda, el jugador debe descartar las diez cartas (la seguidilla de cuatro y los dos tríos) en un solo turno.
+\nRondas de Juego:
+\n1. Trío y Seguidilla
+\n2. Dos Seguidillas
+\n3. Tres Tríos
+\n4. Una Seguidilla y Dos Tríos (Ronda Completa): Para finalizar esta ronda, el jugador debe descartar las diez cartas (la seguidilla de cuatro y los dos tríos) en un solo turno.
 
-Puntuación:
-• Cartas 2 - 9: 5 puntos
-• Cartas 10 - K: 10 puntos
-• As: 15 puntos
-• Joker: 25 puntos
+\nPuntuación:
+\n• Cartas 2 - 9: 5 puntos
+\n• Cartas 10 - K: 10 puntos
+\n• As: 15 puntos
+\n• Joker: 25 puntos
 
-Desarrollo del Juego:
-1. Inicio: Cada jugador recibe 10 cartas. Se coloca una carta boca arriba del mazo en el centro de la mesa para iniciar el descarte. Se designa un jugador como MANO.
+\nDesarrollo del Juego:
+\n1. Inicio: Cada jugador recibe 10 cartas. Se coloca una carta boca arriba del mazo en el centro de la mesa para iniciar el descarte. Se designa un jugador como MANO.
 
-2. Turno del MANO: Para la siguiente ronda, el rol de MANO pasa al jugador a la izquierda del MANO actual.
+\n2. Turno del MANO: Para la siguiente ronda, el rol de MANO pasa al jugador a la izquierda del MANO actual.
 
 
-3. Primera Toma de la Carta Central: Solo el jugador MANO tiene la primera oportunidad de tomar la carta boca arriba del centro. Si decide tomarla, debe descartar una carta de su mano para mantener un total de 10 cartas. Si el MANO no toma la carta central, se pasa a la siguiente fase de toma.
-4. Segunda Oportunidad de Toma de la Carta Central: Si el MANO no tomó la carta central, los demás jugadores, en orden hacia la izquierda del MANO, tienen la oportunidad de tomarla. El primer jugador que la tome debe robar una carta adicional del mazo como penalización, quedando con 12 cartas. Si nadie toma la carta central en esta segunda oportunidad, la carta se QUEMA y se descarta, quedando fuera de juego.
-5. Turno Regular del Jugador: Después de la fase de toma de la carta central (haya sido tomada o quemada), y durante el resto de su turno, cada jugador puede realizar una de las siguientes acciones:
-o Tomar la carta superior del mazo boca abajo (solo si no agarró la carta boca arriba o si agarra como penalización).
-o Bajarse: Mostrar sobre la mesa las combinaciones de cartas requeridas para la ronda actual (tríos o seguidillas). Se puede usar un Joker para completar una combinación. Un Joker ya bajado puede ser reemplazado por la carta que representa y utilizado en otra combinación propia.
-o Agregar cartas: Añadir cartas válidas a sus propias combinaciones ya bajadas (antes de descartar).
-o Descartar: Colocar una carta boca arriba en el centro de la mesa para finalizar su turno.
-6. Fin de la Ronda: Una ronda termina cuando un jugador se queda sin cartas al bajar todas sus combinaciones requeridas (y descartar si es necesario). El jugador que se quedó sin cartas será el primero en actuar en la siguiente ronda.
-7. Puntuación de la Ronda: Los jugadores que no lograron bajarse suman los puntos de las cartas que aún tienen en su mano.
-8. Fin de la Partida: El juego continúa a lo largo de las cuatro rondas. El ganador es el jugador con la menor puntuación total al final de las cuatro rondas, o el último jugador que no haya alcanzado o superado los 500 puntos."""
+\n3. Primera Toma de la Carta Central: Solo el jugador MANO tiene la primera oportunidad de tomar la carta boca arriba del centro. Si decide tomarla, debe descartar una carta de su mano para mantener un total de 10 cartas. Si el MANO no toma la carta central, se pasa a la siguiente fase de toma.
+\n4. Segunda Oportunidad de Toma de la Carta Central: Si el MANO no tomó la carta central, los demás jugadores, en orden hacia la izquierda del MANO, tienen la oportunidad de tomarla. El primer jugador que la tome debe robar una carta adicional del mazo como penalización, quedando con 12 cartas. Si nadie toma la carta central en esta segunda oportunidad, la carta se QUEMA y se descarta, quedando fuera de juego.
+\n5. Turno Regular del Jugador: Después de la fase de toma de la carta central (haya sido tomada o quemada), y durante el resto de su turno, cada jugador puede realizar una de las siguientes acciones:
+\n• Tomar la carta superior del mazo boca abajo (solo si no agarró la carta boca arriba o si agarra como penalización).
+\n• Bajarse: Mostrar sobre la mesa las combinaciones de cartas requeridas para la ronda actual (tríos o seguidillas). Se puede usar un Joker para completar una combinación. Un Joker ya bajado puede ser reemplazado por la carta que representa y utilizado en otra combinación propia.
+\n• Agregar cartas: Añadir cartas válidas a sus propias combinaciones ya bajadas (antes de descartar).
+\n• Descartar: Colocar una carta boca arriba en el centro de la mesa para finalizar su turno.
+\n6. Fin de la Ronda: Una ronda termina cuando un jugador se queda sin cartas al bajar todas sus combinaciones requeridas (y descartar si es necesario). El jugador que se quedó sin cartas será el primero en actuar en la siguiente ronda.
+\n7. Puntuación de la Ronda: Los jugadores que no lograron bajarse suman los puntos de las cartas que aún tienen en su mano.
+\n8. Fin de la Partida: El juego continúa a lo largo de las cuatro rondas. El ganador es el jugador con la menor puntuación total al final de las cuatro rondas, o el último jugador que no haya alcanzado o superado los 500 puntos."""
         box_w, box_h = self._s(600), self._s(300)
         box_x = self.SCREEN_WIDTH // 2 - box_w // 2
         box_y = self._s(140)
@@ -1151,6 +1367,38 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
     def play_click(self):
         self.click_sound.play()
 
+    def iniciar_duelo_bot(self, bot_name, model_file):
+        """
+        Arranca un duelo 1vs1 directo contra el bot elegido en la 'Sala de
+        Bots': pide confirmación, y si se acepta, monta un servidor local
+        (el propio jugador es el host) con exactamente ese bot como único
+        rival, sin pasar por la pantalla de lobby.
+        """
+        if not self.confirm_bot_duel(bot_name):
+            return None
+
+        nombre_jugador = (self.bot_room_name_input.text or "").strip() or "Jugador"
+
+        exito = self.network_manager.start_server(nombre_jugador, "", 2, f"Duelo vs {bot_name}")
+        if not exito:
+            print(f"[SALA DE BOTS] No se pudo iniciar el servidor local para el duelo contra {bot_name}.")
+            return None
+
+        self.network_manager.num_bots = 1
+        self.network_manager.bot_duel_config = {"name": bot_name, "model_file": model_file}
+        print(f"model_file cargado del bot: {str(model_file)}")
+
+        if not self.network_manager.canStartGame():
+            print("[SALA DE BOTS] No se pudo iniciar la partida (se necesitan al menos dos jugadores).")
+            return None
+
+        self.network_manager.startGame()
+        self.network_manager.stop_broadcast()
+        print(f"[SALA DE BOTS] Iniciando duelo 1vs1: {nombre_jugador} vs {bot_name}")
+
+        time.sleep(1.2)
+        return "launch_ui2"
+
     def handle_events(self):
         if not pygame.get_init():
             return False
@@ -1221,11 +1469,40 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                     elif self.CREAR_BUTTON.checkForInput(event.pos):
                         self.play_click()
                         self.current_screen = "create"
+                    elif self.SALA_BOTS_BUTTON.checkForInput(event.pos):
+                        self.play_click()
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.load(resource_path(os.path.join(self.ASSETS_PATH, "sonido", "apocalypse.mp3")))
+                        pygame.mixer.music.play(-1)
+                        self.current_screen = "bot_room"
+
+                elif self.current_screen == "bot_room":
+                    if self.BOT_ROOM_BACK_BUTTON.checkForInput(event.pos):
+                        self.play_click()
+                        self.current_screen = "play"
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.load(resource_path(os.path.join(self.ASSETS_PATH, "sonido", "musica_fondo.mp3")))
+                        pygame.mixer.music.play(-1)
+                    elif getattr(self, "bot_room_louis_rect", None) and self.bot_room_louis_rect.collidepoint(event.pos):
+                        self.play_click()
+                        resultado = self.iniciar_duelo_bot("LouisBot", "LouisBot.pt")
+                        if resultado == "launch_ui2":
+                            return "launch_ui2"
+                    elif getattr(self, "bot_room_gen_rect", None) and self.bot_room_gen_rect.collidepoint(event.pos):
+                        self.play_click()
+                        resultado = self.iniciar_duelo_bot("GeniBot", "GeniBot.pt")
+                        if resultado == "launch_ui2":
+                            return "launch_ui2"
 
                 elif self.current_screen == "join":
                     if event.button == 1 and self.is_hovered:
                         self.play_click()
-                        self.servers = self.network_manager.discoverServers()
+                        # discoverServers() es asíncrono (lanza un hilo y
+                        # devuelve None de inmediato); la lista real se lee
+                        # en vivo desde network_manager.servers cada frame
+                        # dentro de draw_server_list_menu, así que aquí solo
+                        # se dispara la búsqueda, sin sobreescribir self.servers.
+                        self.network_manager.discoverServers()
                         # El índice tocado dentro del navegador siempre arranca
                         # limpio; no preselecciona la sala ya confirmada, para
                         # que el usuario deba tocarla de nuevo y confirmar con
@@ -1344,10 +1621,21 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                     elif self.LOBBY_BACK_BUTTON.checkForInput(event.pos):
                         self.current_screen = "play"
                         self.network_manager.connected_players.clear()
-                        self.network_manager.stop()
-                        self.network_manager.stop_broadcast()
-                        if self.selectedServer:
-                            self.selectedServer.clear()
+                        # leave_room() hace un reseteo COMPLETO (no solo cerrar
+                        # sockets): limpia player_id, mensajes en cola,
+                        # jugadores conectados, etc. Sin esto, unirse después
+                        # a una sala DISTINTA podía arrastrar datos de esta
+                        # sesión y comportarse como si siguiera conectado aquí.
+                        self.network_manager.leave_room()
+                        # No usar self.selectedServer.clear(): ese diccionario
+                        # puede ser la MISMA referencia que sigue viva dentro
+                        # de la lista de salas descubiertas, así que
+                        # vaciarlo in-place podía afectar a otras partes que
+                        # aún lo referenciaran. Basta con soltar la referencia.
+                        self.selectedServer = None
+                        self.isSeletedServer = False
+                        self.selected_server_index = None
+                        self.servers = []
                         print(f"Servidor cerrado...")
                     
                     elif self.PLAY_GAME_BUTTON.checkForInput(event.pos):
@@ -1390,6 +1678,8 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
                 self.num_bots_input_box.handle_event(event)
             elif self.current_screen == "lobby" and getattr(self, "show_chat", False):
                 self.message_input_box.handle_event(event)
+            elif self.current_screen == "bot_room":
+                self.bot_room_name_input.handle_event(event)
 
             if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN and getattr(self.message_input_box, "active", False) and getattr(self, "show_chat", False):
                     msg = self.message_input_box.text.strip()
@@ -1437,10 +1727,14 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
     def update(self):
         delta_time = self.clock.tick(60) / 1000.0
         self.update_animation(delta_time)
-        self.draw_background()
 
-        title_rect = self.titulo_img.get_rect(center=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT*0.25)))
-        self.SCREEN.blit(self.titulo_img, title_rect)
+        if self.current_screen == "bot_room":
+            # Pantalla con fondo propio: no dibujamos el fondo/título del menú principal.
+            self.draw_bot_room_background()
+        else:
+            self.draw_background()
+            title_rect = self.titulo_img.get_rect(center=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT*0.25)))
+            self.SCREEN.blit(self.titulo_img, title_rect)
 
         if self.current_screen == "join":
             self.join_player_input_box.update()
@@ -1453,6 +1747,8 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
             self.num_bots_input_box.update()
         elif self.current_screen == "lobby":
             self.message_input_box.update()
+        elif self.current_screen == "bot_room":
+            self.bot_room_name_input.update()
 
         if self.current_screen == "main":
             mouse_pos = self.draw_main_menu()
@@ -1461,7 +1757,7 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
 
         elif self.current_screen == "play":
             mouse_pos = self.draw_play_menu()
-            for button in [self.UNIRSE_BUTTON, self.CREAR_BUTTON, self.PLAY_BACK]:
+            for button in [self.UNIRSE_BUTTON, self.CREAR_BUTTON, self.SALA_BOTS_BUTTON, self.PLAY_BACK]:
                 button.check_hover(mouse_pos)
 
         elif self.current_screen == "join":
@@ -1481,6 +1777,10 @@ o Descartar: Colocar una carta boca arriba en el centro de la mesa para finaliza
 
         elif self.current_screen == "lobby":
             mouse_pos = self.draw_lobby()
+
+        elif self.current_screen == "bot_room":
+            mouse_pos = self.draw_bot_room_menu()
+            self.BOT_ROOM_BACK_BUTTON.check_hover(mouse_pos)
 
         pygame.display.update()
         return True

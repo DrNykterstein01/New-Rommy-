@@ -42,7 +42,13 @@ class Discovery:
                         "name": self.state.gameName or "Sala de Rummy 500",
                         "playerName": self.state.playerName or "Host",
                         "ip": local_ip,
-                        "port": self.config.TCP_PORT,
+                        # El puerto REAL de esta sala (asignado dinámicamente
+                        # por el SO en server.py), no el fijo de config: con
+                        # el puerto fijo, dos salas en la misma máquina
+                        # anunciaban el mismo puerto y un cliente terminaba
+                        # conectándose siempre a la primera que lo ocupó,
+                        # sin importar cuál hubiera elegido en realidad.
+                        "port": self.state.port or self.config.TCP_PORT,
                         "max_players": self.state.max_players or 4,
                         "currentPlayers": len(self.state.get_connected_players()),
                     }
@@ -92,15 +98,37 @@ class Discovery:
                     # La IP de origen evita que varios anuncios con una IP
                     # publicada como 127.0.0.1 se consideren la misma sala.
                     server_dict["ip"] = addr[0]
-                    server_key = (server_dict.get("ip"), server_dict.get("port"))
+                    # OJO: NO usar server_dict.get("port") para la clave de
+                    # deduplicación. Ese campo es el TCP_PORT fijo que todo
+                    # servidor anuncia igual (network/config.py), así que dos
+                    # salas reales en la MISMA máquina (misma IP de origen,
+                    # mismo TCP_PORT anunciado) terminaban con la misma
+                    # clave y una tapaba a la otra. En cambio, `addr` (el
+                    # origen real del paquete UDP) sí es único por servidor:
+                    # cada broadcast_loop() crea y reutiliza su propio socket
+                    # para todos sus envíos, así que el puerto de origen
+                    # efímero (addr[1]) se mantiene estable para ESE servidor
+                    # y es distinto al de cualquier otro, incluso corriendo
+                    # en la misma computadora. Se guarda junto con la entrada
+                    # (server_dict["_source_addr"]) para poder reconocer los
+                    # próximos paquetes de este mismo servidor y no tratarlos
+                    # como una sala nueva cada vez que vuelve a anunciarse.
+                    server_dict["_source_addr"] = list(addr)
+                    server_key = addr
                     with self._servers_lock:
-                        already_seen = any(
-                            (server.get("ip"), server.get("port")) == server_key
-                            for server in self.discovered_servers
+                        indice_existente = next(
+                            (i for i, server in enumerate(self.discovered_servers)
+                             if tuple(server.get("_source_addr", ())) == server_key),
+                            None
                         )
-                        if not already_seen:
+                        if indice_existente is None:
                             self.discovered_servers.append(server_dict)
                             logger.info(f"Sala descubierta en LAN: {server_dict.get('name', '?')} en {server_dict.get('ip', '?')}")
+                        else:
+                            # Ya la conocíamos: refresca sus datos (p. ej.
+                            # currentPlayers puede haber cambiado) en vez de
+                            # agregarla de nuevo como si fuera otra sala.
+                            self.discovered_servers[indice_existente] = server_dict
                 except socket.timeout:
                     continue
                 except Exception as e:

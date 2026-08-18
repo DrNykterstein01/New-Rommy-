@@ -127,3 +127,26 @@ class NetworkState:
         """Registra el último milisegundo en que un jugador respondió un ping."""
         with self._lock_players:
             self.last_activity[player_id] = timestamp
+
+    def reset(self):
+        """
+        Reinicia TODO el estado a los valores iniciales de __init__: locks,
+        colas (incoming_messages, moves_game, moves_gameServer), diccionarios
+        de estado de juego, datos de conexión (player_id, host, port...),
+        el socket guardado, la lista de jugadores conectados, etc.
+
+        Sin esto, salir de una sala y unirse a otra distinta dejaba mezclados
+        datos de la sesión anterior (mensajes en cola sin procesar, player_id
+        viejo, lista de jugadores de la sala anterior...), lo cual podía
+        hacer que la nueva conexión se comportara como si siguiera en la
+        sala vieja aunque la UI mostrara el nombre de la sala nueva.
+
+        Re-ejecutar __init__ sobre el mismo objeto (en vez de crear un
+        NetworkState nuevo) es intencional: GameServer, GameClient, Discovery
+        y HealthMonitor guardan una referencia a ESTE objeto, así que
+        reinicializarlo in-place hace que todos ellos vean el estado limpio
+        de inmediato, sin tener que reconstruir ni volver a conectar esas
+        otras piezas.
+        """
+        self.__init__()
+        logger.info("NetworkState reiniciado (salida de sala / nueva conexión).")
