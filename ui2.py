@@ -537,7 +537,7 @@ def render_text_with_border(text, font, color, border_color, pos, surface):
 def mostrar_toast_compra(nombre_jugador, origen="descarte"):
     global toast_compra_texto, toast_compra_hasta
     if origen == "mazo":
-        toast_compra_texto = f"{nombre_jugador} compró una carta"
+        toast_compra_texto = f"{nombre_jugador} tomó una carta del mazo"
     elif origen == "central":
         toast_compra_texto = f"{nombre_jugador} tomó la carta central"
     else:
@@ -1622,6 +1622,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
     # Posición: esquina inferior derecha, por encima de la zona de cartas.
     # Ajusta x, y, w, h según tu layout si es necesario.
     btn_ordenar = pygame.Rect(WIDTH - 190, HEIGHT - 160, 170, 40)
+
+    btn_salir_ganador = None
 
     while running:
         # --- SOLO FASE DE ELECCIÓN ---
@@ -6378,6 +6380,7 @@ def main(manager_de_red): # <-- Acepta el manager de red
                 continue
 
         if fase == "game_over":
+                salir_click = False
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         if confirm_exit_modal(screen, WIDTH, HEIGHT):
@@ -6395,9 +6398,42 @@ def main(manager_de_red): # <-- Acepta el manager de red
                             running = False
                         else:
                             continue
+                    elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                        if btn_salir_ganador is not None and btn_salir_ganador.collidepoint(event.pos):
+                            salir_click = True
                 screen.blit(fondo_img, (0, 0))
-                mostrar_ganador_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH)
+                btn_salir_ganador = mostrar_ganador_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH)
                 pygame.display.flip()
+                if salir_click:
+                    # Mismo comportamiento que el botón "Salir" del modal de Menú
+                    running = False
+                    print(f" Jugador antes de salir {jugador_local.playerName}")
+
+                    if network_manager.is_host:
+                        msgHostLeft = {
+                            "type": "DESCONEXION",
+                            "playerId": network_manager.player_id,
+                            "playerName": network_manager.playerName,
+                            "reason": "HOST_LEFT"
+                        }
+                        network_manager.broadcast_message(msgHostLeft)
+                        network_manager.stop()
+                    else:
+                        msgSalir = {
+                            "type": "SALIR",
+                            "playerId": jugador_local.playerId,
+                            "playerName": jugador_local.playerName
+                        }
+                        if network_manager.player:
+                            network_manager.sendData(msgSalir)
+                        network_manager.stop()
+
+                    # Volver a reproducir la música del menú principal
+                    pygame.mixer.music.load(resource_path("assets/sonido/musica_fondo.mp3"))
+                    pygame.mixer.music.play(-1)
+
+                    time.sleep(2)
+                    return
                 continue
         
         
@@ -6687,6 +6723,14 @@ def mostrar_ganador_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH
     msg_final = "Gracias por jugar Rummy 500"
     msg_surf = info_font.render(msg_final, True, (150, 150, 150))
     screen.blit(msg_surf, (center_x - msg_surf.get_width()//2, y_rect + alto_rect - 30))
+
+    # Botón "Salir" (mismo diseño que el del modal de Menú), justo encima del mensaje final
+    btn_w, btn_h = min(ancho_rect - 40, 240), 60
+    img_salir = pygame.image.load(os.path.join(ASSETS_PATH, "salir_btn.png")).convert_alpha()
+    img_salir = pygame.transform.smoothscale(img_salir, (btn_w, btn_h))
+    btn_exit = pygame.Rect(center_x - btn_w // 2, y_rect + alto_rect - 110, btn_w, btn_h)
+    screen.blit(img_salir, btn_exit.topleft)
+    return btn_exit
 
 def actualizar_indices_visual_hand(visual_hand):
     """
