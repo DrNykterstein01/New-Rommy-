@@ -545,13 +545,19 @@ def mostrar_toast_compra(nombre_jugador, origen="descarte"):
     toast_compra_hasta = time.time() + TOAST_COMPRA_DURACION
 
 def dibujar_toast_compra(surface, width, turno_rect=None):
-    global toast_compra_texto
-    if not toast_compra_texto or time.time() >= toast_compra_hasta:
+    global toast_compra_texto, jugador_local
+
+    texto_a_mostrar = ""
+    if jugador_local is not None and getattr(jugador_local, "isHand", False):
+        texto_a_mostrar = "¡ES TU TURNO!"
+    elif toast_compra_texto and time.time() < toast_compra_hasta:
+        texto_a_mostrar = toast_compra_texto
+    else:
         toast_compra_texto = ""
         return
 
     font_toast = get_game_font(14)
-    text_surf = font_toast.render(toast_compra_texto, True, (255, 255, 255))
+    text_surf = font_toast.render(texto_a_mostrar, True, (255, 255, 255))
     padding_x = 18
     padding_y = 10
     toast_w = min(width - 40, text_surf.get_width() + padding_x * 2)
