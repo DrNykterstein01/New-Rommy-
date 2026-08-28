@@ -2982,6 +2982,8 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         # Si aceptó salir ("SI"), procede con la lógica de desconexión por red.
                         running = False
                         print(f" Jugador antes de salir {jugador_local.playerName}")
+                        pygame.mixer.music.load(resource_path("assets/sonido/musica_fondo.mp3"))
+                        pygame.mixer.music.play(-1)
 
                         if network_manager.is_host:
                             msgHostLeft = {
@@ -6408,6 +6410,9 @@ def main(manager_de_red): # <-- Acepta el manager de red
                     # Mismo comportamiento que el botón "Salir" del modal de Menú
                     running = False
                     print(f" Jugador antes de salir {jugador_local.playerName}")
+                    # Volver a reproducir la música del menú principal
+                    pygame.mixer.music.load(resource_path("assets/sonido/musica_fondo.mp3"))
+                    pygame.mixer.music.play(-1)
 
                     if network_manager.is_host:
                         msgHostLeft = {
@@ -6427,10 +6432,6 @@ def main(manager_de_red): # <-- Acepta el manager de red
                         if network_manager.player:
                             network_manager.sendData(msgSalir)
                         network_manager.stop()
-
-                    # Volver a reproducir la música del menú principal
-                    pygame.mixer.music.load(resource_path("assets/sonido/musica_fondo.mp3"))
-                    pygame.mixer.music.play(-1)
 
                     time.sleep(2)
                     return
