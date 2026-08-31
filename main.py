@@ -43,23 +43,59 @@ def main():
         if result == "launch_ui2":
             if len(network_manager.connected_players) == 1:
                 pygame.mixer.music.stop()
+
+            import ui2
+
+            bots_precargados = None
+            if network_manager.is_host and getattr(network_manager, 'num_bots', 0) > 0:
+                # Cargar los modelos de IA de los bots es lento y, sin esto,
+                # deja la ventana en negro y en silencio mientras carga. En
+                # vez de eso, mostramos una pantalla animada (imágenes con
+                # fundido + música "espera.mp3") mientras la carga real
+                # ocurre en un hilo aparte.
+                import functools
+                from loading_screen import mostrar_pantalla_carga
+
+                pantalla_actual = pygame.display.get_surface()
+                ancho_actual, alto_actual = pantalla_actual.get_size()
+                cargar_bots = functools.partial(
+                    ui2.cargar_bots_ia,
+                    network_manager,
+                    len(network_manager.connected_players)
+                )
+                bots_precargados = mostrar_pantalla_carga(pantalla_actual, ancho_actual, alto_actual, cargar_bots)
+
             if network_manager.is_host:
                 jugadores = network_manager.connected_players
                 print(f"Inicializando juego con {len(jugadores)}")
                 network_manager.running = True
 
-                import ui2
-                ui2.main(network_manager)
-                ui_manager.current_screen = "main"
+                ui2.main(network_manager, bots_precargados=bots_precargados)
+
+                # ui2.py maneja su propia ventana (puede cambiar de tamaño,
+                # entrar en pantalla completa, etc.), así que al volver acá
+                # el ui_manager que ya teníamos puede haber quedado con un
+                # tamaño/superficie desactualizados -eso es lo que causaba
+                # que el menú se viera solo en una parte de la ventana y el
+                # resto quedara con contenido viejo de la partida-. Se
+                # recrea con el tamaño ACTUAL de la ventana para que quede
+                # todo bien ajustado, con medidas relativas.
+                ancho_actual, alto_actual = pygame.display.get_surface().get_size()
+                ui_manager = UIManager(ancho_actual, alto_actual, network_manager)
+                ui_manager.SCREEN.fill((0, 0, 0))
+                pygame.display.flip()
 
                 network_manager.game_started = False
                 continue
             else:
                 network_manager.running = True
 
-                import ui2
                 ui2.main(network_manager)
-                ui_manager.current_screen = "main"
+
+                ancho_actual, alto_actual = pygame.display.get_surface().get_size()
+                ui_manager = UIManager(ancho_actual, alto_actual, network_manager)
+                ui_manager.SCREEN.fill((0, 0, 0))
+                pygame.display.flip()
 
                 network_manager.game_started = False
                 continue

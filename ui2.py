@@ -1318,7 +1318,86 @@ def _dev_cargar_mano_ganadora(jugador_local, visual_hand,
     return f"[DEV] Mano de {etiqueta_ronda} cargada ({len(nueva_mano)} cartas). ¡Ya puedes bajarte!"
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def main(manager_de_red): # <-- Acepta el manager de red
+def cargar_bots_ia(network_manager, players_reales_count):
+    """
+    Carga (o crea con heurística base, si no hay modelo entrenado) los bots
+    de IA configurados por el host, según `network_manager.num_bots` y
+    `network_manager.bot_duel_config`. Devuelve una lista de instancias
+    `AIBot` ya listas para sumarse a `players`.
+
+    Se separó de main() a propósito: cargar los modelos (.pt) es la parte
+    lenta/bloqueante de iniciar una partida contra bots (deja la ventana en
+    negro y en silencio un rato). Al vivir en una función aparte, se puede
+    llamar DESDE UN HILO en segundo plano mientras se muestra una pantalla
+    de carga animada (ver main.py / loading_screen.py), y el resultado se
+    le pasa a main() mediante el parámetro `bots_precargados` para que no
+    se repita la carga.
+    """
+    num_bots = getattr(network_manager, 'num_bots', 0)
+    bots = []
+    if num_bots <= 0:
+        return bots
+
+    from AIBot import AIBot
+    # "Sala de Bots": duelo 1vs1 contra un bot ESPECÍFICO elegido por el
+    # usuario (LouisBot o GeniBot), cada uno con su propio archivo .pt.
+    # Si no viene seteado, se usa el comportamiento genérico de siempre
+    # (num_bots bots llamados "LouisBot", cargando LouisBot.pt).
+    bot_duel_config = getattr(network_manager, 'bot_duel_config', None)
+    try:
+        from rummy_env import RummyEnv
+        bot_action_dim = RummyEnv.ACTION_SPACE
+    except Exception as e:
+        print(f"[BOTS] No se pudo importar RummyEnv para action_dim, usando 3 por defecto: {e}")
+        bot_action_dim = 3
+
+    # El tamaño del estado que espera la red depende de CUÁNTOS jugadores
+    # había en total durante el entrenamiento (encode_state incluye un
+    # bloque de features por cada oponente). Si esta partida tiene un
+    # número distinto de jugadores al usado para entrenar el modelo, la
+    # carga de pesos fallará por mismatch de tamaño -por eso todo esto va
+    # en un try/except: si falla, el bot simplemente juega con su
+    # heurística base en vez de la red entrenada, en lugar de romper la
+    # partida-.
+    total_players_final = players_reales_count + num_bots
+    bot_id_base = 1000  # bien por encima de cualquier player_id real (1, 2, 3...)
+
+    for i in range(num_bots):
+        if bot_duel_config and num_bots == 1:
+            # Duelo específico desde "Sala de Bots".
+            bot_name = bot_duel_config.get('name', 'LouisBot')
+            model_filename = bot_duel_config.get('model_file', f"{bot_name}.pt")
+        else:
+            # Comportamiento genérico existente (crear sala + bots).
+            bot_name = "LouisBot"
+            model_filename = "LouisBot.pt"
+
+        model_path = os.path.join(os.path.dirname(__file__), model_filename)
+        bot = AIBot(bot_id_base + i, bot_name)
+        try:
+            dummy_players_info = [{'hand_size': 0} for _ in range(total_players_final)]
+            dummy_state = bot.encode_state(None, 0, dummy_players_info, 1, phase=0)
+            bot.rl_state_dim = len(dummy_state)
+            bot.rl_action_dim = bot_action_dim
+            bot.load_rl_model(model_path)
+            if bot.rl_enabled and os.path.exists(model_path):
+                bot.rl_epsilon = 0.0  # sin exploración aleatoria: juega lo mejor que aprendió
+                print(f"[BOTS] {bot.playerName}: modelo entrenado ({model_filename}) cargado correctamente.")
+            else:
+                bot.rl_enabled = False
+                print(f"[BOTS] {bot.playerName}: no se encontró '{model_filename}', jugará con la heurística base.")
+        except Exception as e:
+            bot.rl_enabled = False
+            print(f"[BOTS] {bot.playerName}: no se pudo cargar '{model_filename}' ({e}). "
+                  f"Probablemente esta partida tiene distinta cantidad de jugadores a la del "
+                  f"entrenamiento. Jugará con la heurística base igualmente.")
+        bots.append(bot)
+
+    print(f"[BOTS] Se cargaron {len(bots)} bot(s) de IA.")
+    return bots
+
+
+def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red (y, opcionalmente, bots ya cargados de antemano)
     global mostrar_boton_comprar
     global screen, WIDTH, HEIGHT, fondo_img, organizar_habilitado, fase
     global network_manager, jugadores , players, cartas_eleccion
@@ -1396,63 +1475,16 @@ def main(manager_de_red): # <-- Acepta el manager de red
         # participan en el reparto y en el cálculo de puntos como cualquier
         # otro jugador, porque AIBot hereda de Player.)
         num_bots = getattr(network_manager, 'num_bots', 0)
-        # "Sala de Bots": duelo 1vs1 contra un bot ESPECÍFICO elegido por el
-        # usuario (LouisBot o GeniBot), cada uno con su propio archivo .pt.
-        # Si no viene seteado, se usa el comportamiento genérico de siempre
-        # (num_bots bots llamados "LouisBot", cargando aibot_selfplay.pt).
-        bot_duel_config = getattr(network_manager, 'bot_duel_config', None)
         if num_bots > 0:
-            from AIBot import AIBot
-            try:
-                from rummy_env import RummyEnv
-                bot_action_dim = RummyEnv.ACTION_SPACE
-            except Exception as e:
-                print(f"[BOTS] No se pudo importar RummyEnv para action_dim, usando 3 por defecto: {e}")
-                bot_action_dim = 3
+            # Si ya nos pasaron los bots cargados de antemano (p.ej. desde la
+            # pantalla de carga de main.py, que los cargó en un hilo aparte
+            # mientras mostraba la animación de "Cargando modelos de IA..."),
+            # los reutilizamos tal cual en vez de volver a cargarlos aquí
+            # -que es la parte lenta y bloqueante-.
+            bots = bots_precargados if bots_precargados is not None else cargar_bots_ia(network_manager, len(players))
+            players.extend(bots)
 
-            # El tamaño del estado que espera la red depende de CUÁNTOS
-            # jugadores había en total durante el entrenamiento (encode_state
-            # incluye un bloque de features por cada oponente). Si esta
-            # partida tiene un número distinto de jugadores al usado para
-            # entrenar el modelo, la carga de pesos fallará por mismatch de
-            # tamaño -por eso todo esto va en un try/except: si falla, el bot
-            # simplemente juega con su heurística base en vez de la red
-            # entrenada, en lugar de romper la partida-.
-            total_players_final = len(players) + num_bots
-            bot_id_base = 1000  # bien por encima de cualquier player_id real (1, 2, 3...)
-
-            for i in range(num_bots):
-                if bot_duel_config and num_bots == 1:
-                    # Duelo específico desde "Sala de Bots".
-                    bot_name = bot_duel_config.get('name', 'LouisBot')
-                    model_filename = bot_duel_config.get('model_file', f"{bot_name}.pt")
-                else:
-                    # Comportamiento genérico existente (crear sala + bots).
-                    bot_name = "LouisBot"
-                    model_filename = "LouisBot.pt"
-
-                model_path = os.path.join(os.path.dirname(__file__), model_filename)
-                bot = AIBot(bot_id_base + i, bot_name)
-                try:
-                    dummy_players_info = [{'hand_size': 0} for _ in range(total_players_final)]
-                    dummy_state = bot.encode_state(None, 0, dummy_players_info, 1, phase=0)
-                    bot.rl_state_dim = len(dummy_state)
-                    bot.rl_action_dim = bot_action_dim
-                    bot.load_rl_model(model_path)
-                    if bot.rl_enabled and os.path.exists(model_path):
-                        bot.rl_epsilon = 0.0  # sin exploración aleatoria: juega lo mejor que aprendió
-                        print(f"[BOTS] {bot.playerName}: modelo entrenado ({model_filename}) cargado correctamente.")
-                    else:
-                        bot.rl_enabled = False
-                        print(f"[BOTS] {bot.playerName}: no se encontró '{model_filename}', jugará con la heurística base.")
-                except Exception as e:
-                    bot.rl_enabled = False
-                    print(f"[BOTS] {bot.playerName}: no se pudo cargar '{model_filename}' ({e}). "
-                          f"Probablemente esta partida tiene distinta cantidad de jugadores a la del "
-                          f"entrenamiento. Jugará con la heurística base igualmente.")
-                players.append(bot)
-
-            print(f"[BOTS] Se agregaron {num_bots} bot(s) a la partida. Total de jugadores: {len(players)}")
+            print(f"[BOTS] Se agregaron {len(bots)} bot(s) a la partida. Total de jugadores: {len(players)}")
             if len(players) == 2 and num_bots == 1:
                 try:
                     if any(hasattr(p, 'is_ai') and p.playerName == "LouisBot" for p in players):
