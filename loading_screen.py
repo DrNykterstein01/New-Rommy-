@@ -48,7 +48,7 @@ NOMBRES_IMAGENES_CARGA = [
 TIEMPO_POR_IMAGEN = 3.2
 DURACION_FADE = 1.1
 
-TEXTO_CARGA = "Cargando modelos de Idtedijezia Adtifizial, la partida empezará en breve"
+TEXTO_CARGA = "Cargando modelos de IA, la partida empezará en breve"
 
 
 def _cargar_imagenes_fondo(screen_width, screen_height):
