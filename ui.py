@@ -362,7 +362,7 @@ class UIManager:
             font=self.get_font(40),
             base_color="#d7fcd4",
             hovering_color="Black",
-            size=(self._s(260), self._s(80))
+            size=(self._s(300), self._s(90))
         )
 
         self.UNIRSE_BUTTON = Button(
@@ -631,16 +631,16 @@ class UIManager:
         ('nombre', 'Javier Piñero'),
         ('espacio', ''),
 
+        ('departamento', 'DIRECCIÓN GENERAL'),
+        ('rol', 'Director General'),
+        ('nombre', 'Louis Mogollón'),
+        ('espacio', ''),
+
         ('tanda', 'PRIMERA TANDA DE DESARROLLO'),
         ('espacio', ''),
         ('espacio', ''),
 
-        ('departamento', 'DIRECCIÓN DE PROYECTO'),
-        ('rol', 'Director de Proyecto'),
-        ('nombre', 'Louis Mogollón'),
-        ('espacio', ''),
-
-        ('departamento', 'FRONTEND / INTERFAZ'),
+        ('departamento', 'FRONTEND / INTERFAZ DE USUARIO'),
         ('rol', 'Director de Frontend'),
         ('nombre', 'Fernando Hernández'),
         ('espacio', ''),
@@ -658,6 +658,7 @@ class UIManager:
         ('nombre', 'Louis Mogollón'),
         ('nombre', 'Ricardo González'),
         ('nombre', 'Carlos Romero'),
+        ('espacio', ''),
         ('rol', 'Programadores de Reglas y Motor de Juego'),
         ('nombre', 'Louis Mogollón'),
         ('nombre', 'Ricardo González'),
@@ -670,6 +671,7 @@ class UIManager:
         ('departamento', 'BACKEND — REDES Y MULTIJUGADOR'),
         ('rol', 'Director de Backend de Redes'),
         ('nombre', 'Luis Moreno'),
+        ('espacio', ''),
         ('rol', 'Programadores de Networking'),
         ('nombre', 'Luis Moreno'),
         ('nombre', 'Louis Mogollón'),
@@ -682,6 +684,7 @@ class UIManager:
         ('departamento', 'INTELIGENCIA ARTIFICIAL'),
         ('rol', 'Director de IA'),
         ('nombre', 'Louis Mogollón'),
+        ('espacio', ''),
         ('rol', 'Entrenamiento y Aprendizaje por Refuerzo'),
         ('nombre', 'Louis Mogollón'),
         ('espacio', ''),
@@ -695,6 +698,7 @@ class UIManager:
         ('departamento', 'TESTING Y QA'),
         ('rol', 'Director de QA'),
         ('nombre', 'Carlos Romero'),
+        ('espacio', ''),
         ('rol', 'Testers'),
         ('nombre', 'Carlos Romero'),
         ('nombre', 'Louis Mogollón'),
@@ -703,10 +707,11 @@ class UIManager:
         ('nombre', 'Luis Moreno'),
         ('nombre', 'Ricardo González'),
         ('nombre', 'Isaías Tovar'),
-        ('espacio', 'Alejandro Fajardo'),
+        ('nombre', 'Alejandro Fajardo'),
+        ('espacio', ''),
 
-        ('departamento', 'DEBUGGING'),
-        ('rol', 'Encargados de Debugging'),
+        ('departamento', 'DEBUGGING Y CONTROL DE VERSIONES'),
+        ('rol', 'Encargados de Debugging y Manejo de GitHub'),
         ('nombre', 'Carlos Romero'),
         ('nombre', 'Louis Mogollón'),
         ('nombre', 'Ricardo González'),
@@ -722,10 +727,36 @@ class UIManager:
         ('nombre', 'Ricardo González'),
         ('nombre', 'Louis Mogollón'),
         ('nombre', 'Gémini Nano Banana Pro'),
+        ('espacio', ''),
         ('rol', 'Música y Efectos de Sonido'),
         ('nombre', 'Menú Principal - Carlos Paradas'),
         ('nombre', 'Pantalla de Carga - Louis Mogollón'),
         ('nombre', 'Música alternativa - Gémini Lyria 3'),
+        ('espacio', ''),
+        ('espacio', ''),
+
+        ('departamento', 'HERRAMIENTAS UTILIZADAS DURANTE EL DESARROLLO'),
+        ('rol', 'Lenguaje Utilizado'),
+        ('nombre', 'Python'),
+        ('espacio', ''),
+        ('rol', 'Herramientas Fundamentales de Desarrollo'),
+        ('nombre', 'PyGame (Diseño de Interfaces y Manejo de Eventos)'),
+        ('nombre', 'PyTorch (Entrenamiento de Bots de IA)'),
+        ('nombre', 'Numpy'),
+        ('nombre', 'Itertools'),
+        ('espacio', ''),
+        ('rol', 'Herramientas de Manejo de Redes'),
+        ('nombre', 'Socket'),
+        ('nombre', 'Threading'),
+        ('nombre', 'Logging'),
+        ('nombre', 'Typing'),
+        ('nombre', 'Dataclasses'),
+        ('nombre', 'Enum'),
+        ('nombre', 'JSON'),
+        ('espacio', ''),
+        ('rol', 'Herramientas de Diseño Auxiliares'),
+        ('nombre', 'Gémini Nano Banana Pro'),
+        ('nombre', 'PhotoShop'),
         ('espacio', ''),
         ('espacio', ''),
 
@@ -826,7 +857,7 @@ class UIManager:
         title_rect = self.titulo_img.get_rect(center=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT*0.25)))
         self.SCREEN.blit(self.titulo_img, title_rect)
         MENU_MOUSE_POS = pygame.mouse.get_pos()
-        for button in [self.JUGAR_BUTTON, self.REGLAS_BUTTON, self.SALIR_BUTTON]:
+        for button in [self.JUGAR_BUTTON, self.REGLAS_BUTTON, self.CREDITOS_BUTTON, self.SALIR_BUTTON]:
             button.check_hover(MENU_MOUSE_POS)
             button.update(self.SCREEN)
         return MENU_MOUSE_POS
