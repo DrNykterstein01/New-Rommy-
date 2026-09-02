@@ -252,6 +252,22 @@ class UIManager:
         except Exception:
             self.genibot_face_img = None
 
+        # --- Créditos: assets opcionales (el usuario los agregará luego). ---
+        # Botón "Ver Créditos" (mismo estilo que los demás botones del menú).
+        # Ruta esperada: assets/creditos_btn.png
+        try:
+            self.creditos_img = pygame.image.load(resource_path("assets/creditos_btn.png")).convert_alpha()
+        except Exception as e:
+            self.creditos_img = None
+            print(f"ERROR AL CARGAR EL BOTÓN DE CRÉDITOS: {e}")
+        # Fondo exclusivo de la pantalla de créditos.
+        # Ruta esperada: assets/fondo_creditos.png
+        try:
+            self.fondo_creditos_img_original = pygame.image.load(resource_path("assets/fondo_creditos.png")).convert()
+        except Exception as e:
+            self.fondo_creditos_img_original = None
+            print(f"ERROR AL CARGAR EL FONDO DE CRÉDITOS: {e}")
+
         self.titulo_img_original = pygame.image.load(os.path.join(assets_path, "titulo.png")).convert_alpha()
         self.fondo_img_original = pygame.image.load(os.path.join(assets_path, "fondo.png")).convert()
         self.cuadro_img = pygame.image.load(os.path.join(assets_path, "cuadro.png")).convert_alpha()
@@ -286,7 +302,7 @@ class UIManager:
         if scaled_size in self.cacheDeFuentes:
             return self.cacheDeFuentes[scaled_size]
         try:
-            font_path = resource_path(os.path.join("assets", "pixel.ttf"))
+            font_path = resource_path(os.path.join("assets", "PressStart2P-Regular.ttf"))
             f = pygame.font.Font(font_path, scaled_size)
         except:
             f = pygame.font.SysFont("arial", scaled_size)
@@ -304,6 +320,10 @@ class UIManager:
             self.bots_fondo_img = pygame.transform.scale(self.bots_fondo_img_original, (self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
         else:
             self.bots_fondo_img = None
+        if getattr(self, "fondo_creditos_img_original", None) is not None:
+            self.fondo_creditos_img = pygame.transform.scale(self.fondo_creditos_img_original, (self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
+        else:
+            self.fondo_creditos_img = None
 
         self.JUGAR_BUTTON = Button(
             image=self.jugar_img,
@@ -333,6 +353,16 @@ class UIManager:
             base_color="#d7fcd4",
             hovering_color="White",
             size=(self._s(300), self._s(90))
+        )
+
+        self.CREDITOS_BUTTON = Button(
+            image=self.creditos_img,
+            pos=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT*0.87)),
+            text_input="" if self.creditos_img else "Ver Créditos",
+            font=self.get_font(40),
+            base_color="#d7fcd4",
+            hovering_color="Black",
+            size=(self._s(260), self._s(80))
         )
 
         self.UNIRSE_BUTTON = Button(
@@ -382,6 +412,19 @@ class UIManager:
             base_color="White",
             hovering_color="Green",
             size=(self._s(220), self._s(80))
+        )
+
+        # Botón "Volver" de la pantalla de créditos: en la esquina superior
+        # (no abajo centrado como los demás), para poder salir en cualquier
+        # momento de los 3 minutos de scroll sin tener que esperar a que termine.
+        self.CREDITOS_BACK_BUTTON = Button(
+            image=self.volver_img,
+            pos=(self._s(90), self._s(50)),
+            text_input="",
+            font=self.get_font(40),
+            base_color="White",
+            hovering_color="Green",
+            size=(self._s(150), self._s(60))
         )
 
         small_font = self.get_font(30)
@@ -568,6 +611,216 @@ class UIManager:
         rect_derecha = rotada_derecha.get_rect(center=self.pos_derecha)
         self.SCREEN.blit(rotada_derecha, rect_derecha)
         self.SCREEN.blit(self.credits_surface, (self.credits_x_pos, self.credits_y_pos))
+
+    # Contenido de los créditos: lista de (tipo, texto). Tipos disponibles:
+    #   'departamento' -> encabezado grande de un área (ej. "FRONTEND")
+    #   'rol'          -> un cargo/rol dentro del área (ej. "Director de Frontend")
+    #   'nombre'       -> un nombre de integrante
+    #   'espacio'      -> línea en blanco, para separar bloques
+    # Edita esta lista libremente para poner los nombres reales del equipo;
+    # el scroll se recalcula solo según cuánto contenido haya.
+    CREDITOS_CONTENIDO = [
+        ('departamento', 'ROMMY 500'),
+        ('nombre', 'UNIVERSIDAD CENTROCCIDENTAL LISANDRO ALVARADO'),
+        ('nombre', 'DECANATO DE CIENCIAS Y TECNOLOGÍA'),
+        ('espacio', ''),
+        ('espacio', ''),
+
+        ('departamento', 'PRODUCCIÓN EJECUTIVA'),
+        ('rol', 'Productor Ejecutivo'),
+        ('nombre', 'Javier Piñero'),
+        ('espacio', ''),
+
+        ('tanda', 'PRIMERA TANDA DE DESARROLLO'),
+        ('espacio', ''),
+        ('espacio', ''),
+
+        ('departamento', 'DIRECCIÓN DE PROYECTO'),
+        ('rol', 'Director de Proyecto'),
+        ('nombre', 'Louis Mogollón'),
+        ('espacio', ''),
+
+        ('departamento', 'FRONTEND / INTERFAZ'),
+        ('rol', 'Director de Frontend'),
+        ('nombre', 'Fernando Hernández'),
+        ('espacio', ''),
+        ('rol', 'Desarrolladores de Interfaz'),
+        ('nombre', 'Fernando Hernández'),
+        ('nombre', 'Louis Mogollón'),
+        ('nombre', 'Alejandro Fajardo'),
+        ('nombre', 'José Alaña'),
+        ('nombre', 'Carlos Romero'),
+        ('nombre', 'Angel Curé'),
+        ('espacio', ''),
+
+        ('departamento', 'BACKEND — LÓGICA DE JUEGO'),
+        ('rol', 'Directores de Backend de Lógica'),
+        ('nombre', 'Louis Mogollón'),
+        ('nombre', 'Ricardo González'),
+        ('nombre', 'Carlos Romero'),
+        ('rol', 'Programadores de Reglas y Motor de Juego'),
+        ('nombre', 'Louis Mogollón'),
+        ('nombre', 'Ricardo González'),
+        ('nombre', 'Carlos Romero'),
+        ('nombre', 'Josmery Osal'),
+        ('nombre', 'Deannys Pérez'),
+        ('nombre', 'Ana Caldera'),
+        ('espacio', ''),
+
+        ('departamento', 'BACKEND — REDES Y MULTIJUGADOR'),
+        ('rol', 'Director de Backend de Redes'),
+        ('nombre', 'Luis Moreno'),
+        ('rol', 'Programadores de Networking'),
+        ('nombre', 'Luis Moreno'),
+        ('nombre', 'Louis Mogollón'),
+        ('nombre', 'Isaías Tovar'),
+        ('nombre', 'Carlos Paradas'),
+        ('nombre', 'Gustavo Álvarez'),
+        ('nombre', 'Ricardo González'),
+        ('espacio', ''),
+
+        ('departamento', 'INTELIGENCIA ARTIFICIAL'),
+        ('rol', 'Director de IA'),
+        ('nombre', 'Louis Mogollón'),
+        ('rol', 'Entrenamiento y Aprendizaje por Refuerzo'),
+        ('nombre', 'Louis Mogollón'),
+        ('espacio', ''),
+
+        ('departamento', 'REFACTORIZACIÓN'),
+        ('rol', 'Encargados de Refactorización'),
+        ('nombre', 'Eta vaina la pongo dejpuej xd'),
+        ('nombre', 'Eta vaina también la pongo dejpuej xd'),
+        ('espacio', ''),
+
+        ('departamento', 'TESTING Y QA'),
+        ('rol', 'Director de QA'),
+        ('nombre', 'Carlos Romero'),
+        ('rol', 'Testers'),
+        ('nombre', 'Carlos Romero'),
+        ('nombre', 'Louis Mogollón'),
+        ('nombre', 'Fernando Hernández'),
+        ('nombre', 'Carlos Paradas'),
+        ('nombre', 'Luis Moreno'),
+        ('nombre', 'Ricardo González'),
+        ('nombre', 'Isaías Tovar'),
+        ('espacio', 'Alejandro Fajardo'),
+
+        ('departamento', 'DEBUGGING'),
+        ('rol', 'Encargados de Debugging'),
+        ('nombre', 'Carlos Romero'),
+        ('nombre', 'Louis Mogollón'),
+        ('nombre', 'Ricardo González'),
+        ('nombre', 'Fernando Hernández'),
+        ('nombre', 'Luis Moreno'),
+        ('espacio', ''),
+
+        ('departamento', 'ARTE Y SONIDO'),
+        ('rol', 'Arte y Assets Visuales'),
+        ('nombre', 'Fernando Hernández'),
+        ('nombre', 'Alejandro Fajardo'),
+        ('nombre', 'Gustavo Álvarez'),
+        ('nombre', 'Ricardo González'),
+        ('nombre', 'Louis Mogollón'),
+        ('nombre', 'Gémini Nano Banana Pro'),
+        ('rol', 'Música y Efectos de Sonido'),
+        ('nombre', 'Menú Principal - Carlos Paradas'),
+        ('nombre', 'Pantalla de Carga - Louis Mogollón'),
+        ('nombre', 'Música alternativa - Gémini Lyria 3'),
+        ('espacio', ''),
+        ('espacio', ''),
+
+        ('departamento', '¡GRACIAS POR JUGAR!'),
+        ('espacio', ''),
+        ('espacio', ''),
+    ]
+
+    # Duración total del scroll de créditos, en segundos.
+    CREDITOS_DURACION_SEGUNDOS = 180
+
+    def _construir_lineas_creditos(self):
+        """
+        Renderiza cada línea de CREDITOS_CONTENIDO como una superficie de
+        pygame UNA sola vez (se cachea por ancho de pantalla), en vez de
+        volver a renderizar texto en cada uno de los ~60 cuadros por
+        segundo -son varias decenas de líneas, así que hacerlo cada frame
+        sería un desperdicio innecesario-.
+        """
+        cache_key = self.SCREEN_WIDTH
+        if getattr(self, "_creditos_lineas_cache_key", None) == cache_key:
+            return self._creditos_lineas_cache
+
+        fuente_departamento = self.get_font(max(24, int(self.SCREEN_HEIGHT * 0.045)))
+        fuente_tanda = self.get_font(max(28, int(self.SCREEN_HEIGHT * 0.055)))
+        fuente_rol = self.get_font(max(18, int(self.SCREEN_HEIGHT * 0.028)))
+        fuente_nombre = self.get_font(max(16, int(self.SCREEN_HEIGHT * 0.024)))
+
+        lineas = []
+        for tipo, texto in self.CREDITOS_CONTENIDO:
+            if tipo == 'espacio':
+                lineas.append((None, int(self.SCREEN_HEIGHT * 0.035)))
+                continue
+            if tipo == 'departamento':
+                surf = fuente_departamento.render(texto, True, "#fe0000")
+            elif tipo == 'rol':
+                surf = fuente_rol.render(texto, True, "#2bc1ef")
+            elif tipo == 'tanda':
+                surf = fuente_tanda.render(texto, True, "#00e887")
+            else:
+                surf = fuente_nombre.render(texto, True, "White")
+            lineas.append((surf, surf.get_height() + int(self.SCREEN_HEIGHT * 0.012)))
+
+        self._creditos_lineas_cache = lineas
+        self._creditos_lineas_cache_key = cache_key
+        return lineas
+
+    def draw_credits_menu(self):
+        """
+        Pantalla de créditos: fondo dedicado (fondo_creditos.png) y el
+        contenido de CREDITOS_CONTENIDO desplazándose hacia arriba, estilo
+        los créditos finales de una película, durante
+        CREDITOS_DURACION_SEGUNDOS en total. El botón "Volver" (en la
+        esquina, dibujado por quien llama a esta función) permite salir
+        antes de que termine.
+        """
+        MENU_MOUSE_POS = pygame.mouse.get_pos()
+
+        fondo = getattr(self, "fondo_creditos_img", None) or self.fondo_img
+        self.SCREEN.blit(fondo, (0, 0))
+        overlay = pygame.Surface((self.SCREEN_WIDTH, self.SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 90))
+        self.SCREEN.blit(overlay, (0, 0))
+
+        lineas = self._construir_lineas_creditos()
+        altura_total = sum(alto for _, alto in lineas)
+
+        if not hasattr(self, "_creditos_inicio_ticks"):
+            self._creditos_inicio_ticks = pygame.time.get_ticks()
+
+        transcurrido_seg = (pygame.time.get_ticks() - self._creditos_inicio_ticks) / 1000.0
+        distancia_total = self.SCREEN_HEIGHT + altura_total
+        velocidad_px_seg = distancia_total / self.CREDITOS_DURACION_SEGUNDOS
+
+        if transcurrido_seg >= self.CREDITOS_DURACION_SEGUNDOS:
+            # Los créditos terminaron de desplazarse solos: vuelve al menú.
+            self.current_screen = "main"
+            return MENU_MOUSE_POS
+
+        desplazamiento = velocidad_px_seg * transcurrido_seg
+        y = self.SCREEN_HEIGHT - desplazamiento
+
+        for surf, alto in lineas:
+            # Solo dibuja lo que realmente cae dentro de la pantalla (más un
+            # pequeño margen), en vez de las decenas de líneas totales.
+            if -alto <= y <= self.SCREEN_HEIGHT:
+                if surf is not None:
+                    rect = surf.get_rect(centerx=self.SCREEN_WIDTH // 2, y=int(y))
+                    self.SCREEN.blit(surf, rect)
+            y += alto
+
+        self.CREDITOS_BACK_BUTTON.check_hover(MENU_MOUSE_POS)
+        self.CREDITOS_BACK_BUTTON.update(self.SCREEN)
+
+        return MENU_MOUSE_POS
 
     def draw_main_menu(self):
         title_rect = self.titulo_img.get_rect(center=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT*0.25)))
@@ -1487,12 +1740,26 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
                     elif self.REGLAS_BUTTON.checkForInput(event.pos):
                         self.play_click()
                         self.options()
+                    elif self.CREDITOS_BUTTON.checkForInput(event.pos):
+                        self.play_click()
+                        self.current_screen = "credits"
+                        self._creditos_inicio_ticks = pygame.time.get_ticks()
+                        pygame.mixer.music.load(resource_path(os.path.join(self.ASSETS_PATH, "sonido", "creditos.mp3")))
+                        pygame.mixer.music.play(-1)
                     elif self.SALIR_BUTTON.checkForInput(event.pos):
                         self.play_click()
                         if self.confirm_exit():
                             return False
                         else:
                             continue
+
+                elif self.current_screen == "credits":
+                    if self.CREDITOS_BACK_BUTTON.checkForInput(event.pos):
+                        self.play_click()
+                        self.current_screen = "main"
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.load(resource_path(os.path.join(self.ASSETS_PATH, "sonido", "musica_fondo.mp3")))
+                        pygame.mixer.music.play(-1)
 
                 elif self.current_screen == "play":
                     if self.PLAY_BACK.checkForInput(event.pos):
@@ -1795,6 +2062,10 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
         if self.current_screen == "bot_room":
             # Pantalla con fondo propio: no dibujamos el fondo/título del menú principal.
             self.draw_bot_room_background()
+        elif self.current_screen == "credits":
+            # Pantalla con fondo propio: los créditos llevan su propio
+            # título (dentro del scroll), no el logo del juego.
+            pass
         else:
             self.draw_background()
             title_rect = self.titulo_img.get_rect(center=(self.SCREEN_WIDTH//2, int(self.SCREEN_HEIGHT*0.25)))
@@ -1816,8 +2087,12 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
 
         if self.current_screen == "main":
             mouse_pos = self.draw_main_menu()
-            for button in [self.JUGAR_BUTTON, self.REGLAS_BUTTON, self.SALIR_BUTTON]:
+            for button in [self.JUGAR_BUTTON, self.REGLAS_BUTTON, self.CREDITOS_BUTTON, self.SALIR_BUTTON]:
                 button.check_hover(mouse_pos)
+
+        elif self.current_screen == "credits":
+            mouse_pos = self.draw_credits_menu()
+            self.CREDITOS_BACK_BUTTON.check_hover(mouse_pos)
 
         elif self.current_screen == "play":
             mouse_pos = self.draw_play_menu()

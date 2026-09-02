@@ -2486,49 +2486,79 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 if jugada:
                     try:
                         grupos_finales = []
+                        jugada_valida = True
                         for grupo in jugada:
                             grupo = list(grupo)
-                            if bot_en_turno._get_play_type(grupo) == "sequence":
+                            tipo_grupo = bot_en_turno._get_play_type(grupo)
+                            if tipo_grupo == "sequence":
                                 ordenado = bot_en_turno.sortedStraight(grupo)
                                 if ordenado and ordenado is not True:
                                     grupo = ordenado
+                                # Salvaguarda: nunca confiar ciegamente en lo que
+                                # devuelve decide_play_cards. Antes de bajar
+                                # nada a la mesa, se revalida cada grupo con las
+                                # mismas reglas que usa el resto del juego
+                                # (mínimo 4 cartas, mismo palo, consecutivas).
+                                if not bot_en_turno.isValidStraightF(grupo):
+                                    jugada_valida = False
+                                    print(f"[BOTS] {bot_en_turno.playerName}: JUGADA INVÁLIDA DETECTADA Y BLOQUEADA "
+                                          f"(seguidilla con {len(grupo)} cartas: {[str(c) for c in grupo]}). "
+                                          f"Se cancela la bajada completa de este turno.")
+                            elif tipo_grupo == "trio":
+                                if not bot_en_turno.isValidTrioF(grupo):
+                                    jugada_valida = False
+                                    print(f"[BOTS] {bot_en_turno.playerName}: JUGADA INVÁLIDA DETECTADA Y BLOQUEADA "
+                                          f"(trío con {len(grupo)} cartas: {[str(c) for c in grupo]}). "
+                                          f"Se cancela la bajada completa de este turno.")
+                            else:
+                                jugada_valida = False
+                                print(f"[BOTS] {bot_en_turno.playerName}: JUGADA INVÁLIDA DETECTADA Y BLOQUEADA "
+                                      f"(grupo de tipo desconocido: {[str(c) for c in grupo]}). "
+                                      f"Se cancela la bajada completa de este turno.")
                             grupos_finales.append(grupo)
 
-                        if not getattr(bot_en_turno, "jugadas_bajadas", None):
-                            bot_en_turno.jugadas_bajadas = []
-                        if not getattr(bot_en_turno, "playMade", None):
-                            bot_en_turno.playMade = []
+                        if not jugada_valida:
+                            # No se toca la mano ni la mesa: es como si el bot
+                            # hubiera decidido no bajarse este turno. Pasa
+                            # directo a intentar descartar.
+                            grupos_finales = []
 
-                        for grupo in grupos_finales:
-                            bot_en_turno.jugadas_bajadas.append(grupo)
-                            bot_en_turno.playMade.append(grupo)
-                            for carta in grupo:
-                                if carta in bot_en_turno.playerHand:
-                                    bot_en_turno.playerHand.remove(carta)
+                        if grupos_finales:
+                            if not getattr(bot_en_turno, "jugadas_bajadas", None):
+                                bot_en_turno.jugadas_bajadas = []
+                            if not getattr(bot_en_turno, "playMade", None):
+                                bot_en_turno.playMade = []
 
-                        bot_en_turno.downHand = True
+                            for grupo in grupos_finales:
+                                bot_en_turno.jugadas_bajadas.append(grupo)
+                                bot_en_turno.playMade.append(grupo)
+                                for carta in grupo:
+                                    if carta in bot_en_turno.playerHand:
+                                        bot_en_turno.playerHand.remove(carta)
 
-                        msgBajarse = {
-                            "type": "BAJARSE",
-                            "playerHand": bot_en_turno.playerHand,
-                            "jugadas_bajadas": bot_en_turno.jugadas_bajadas,
-                            "playMade": bot_en_turno.playMade,
-                            "playerId": bot_en_turno.playerId,
-                            "round": round
-                        }
-                        network_manager.broadcast_message(msgBajarse)
-                        try:
-                            bajarse_sound.play()
-                        except Exception as e:
-                            print(f"[BOTS] {bot_en_turno.playerName}: error al reproducir sonidos de bajarse ({e}).")
-                            pass
-                        try:
-                            voz_bajarse.play()
-                        except Exception as e:
-                            print(f"[BOTS] {bot_en_turno.playerName}: error al reproducir voz de bajarse ({e}).")
-                            pass
-                        mensaje_temporal = f"{bot_en_turno.playerName} se bajó."
-                        mensaje_tiempo = time.time()
+                            bot_en_turno.downHand = True
+
+                            msgBajarse = {
+                                "type": "BAJARSE",
+                                "playerHand": bot_en_turno.playerHand,
+                                "jugadas_bajadas": bot_en_turno.jugadas_bajadas,
+                                "playMade": bot_en_turno.playMade,
+                                "playerId": bot_en_turno.playerId,
+                                "round": round
+                            }
+                            network_manager.broadcast_message(msgBajarse)
+                            try:
+                                bajarse_sound.play()
+                            except Exception as e:
+                                print(f"[BOTS] {bot_en_turno.playerName}: error al reproducir sonidos de bajarse ({e}).")
+                                pass
+                            try:
+                                voz_bajarse.play()
+                            except Exception as e:
+                                print(f"[BOTS] {bot_en_turno.playerName}: error al reproducir voz de bajarse ({e}).")
+                                pass
+                            mensaje_temporal = f"{bot_en_turno.playerName} se bajó."
+                            mensaje_tiempo = time.time()
                     except Exception as e:
                         print(f"[BOTS] {bot_en_turno.playerName}: error al bajarse ({e}). Se omite la bajada este turno.")
 
