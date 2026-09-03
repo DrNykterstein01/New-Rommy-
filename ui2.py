@@ -74,6 +74,114 @@ def get_game_font(size):
         f = pygame.font.SysFont("arial", size)
     _fonts_cache[size] = f
     return f
+
+# ═══════════════════════════════════════════════════════════════════════
+# === ENCUENTRO OCULTO: Gaster ============================================
+# ═══════════════════════════════════════════════════════════════════════
+# Boss secreto, solo alcanzable escribiendo "gaster" en el menú principal
+# (ver ui.py). Cuando main() detecta que la partida es contra Gaster
+# (network_manager.easter_egg_gaster == True), se activa este modo, que:
+#   - cambia ciertos recuadros/botones a su variante en blanco y negro,
+#   - cambia el dorso de las cartas a su variante en blanco y negro,
+#   - pone de fondo el GIF animado "Gaster.gif" en loop indefinido,
+#   - reemplaza la música y las voces del bot por las de Gaster,
+#   - fuerza TODO el texto a mayúsculas y a la fuente Wingdings.
+# MODO_OCULTO_GASTER se recalcula al inicio de cada llamada a main(), así
+# que una partida normal después de un encuentro con Gaster no arrastra
+# nada de esto.
+MODO_OCULTO_GASTER = False
+
+# Mapeo explícito "archivo normal" -> "archivo en blanco y negro" para el
+# encuentro oculto. Si el archivo _bw no existe en disco, se usa siempre el
+# normal (no rompe nada si todavía no se agregaron los assets).
+MAPEO_ASSETS_GASTER = {
+    "seguidilla.png": "seguidilla_bw.png",
+    "descarte.png": "descarte_bw.png",
+    "bajarse.png": "bajarse_btn_bw.png",
+    "descartar.png": "descartar_btn_bw.png",
+    "comprar_carta.png": "comprar_btn_bw.png",
+    "menu_btn.png": "menu_btn_bw.png",
+    "menu.png": "menu_btn_bw.png",
+    "renaudar_btn.png": "reanudar_btn_bw.png",
+    "salir_btn.png": "salir_btn_bw.png",
+}
+
+def ruta_asset_modo(nombre_archivo, carpeta=None):
+    """
+    Devuelve la ruta completa de un asset, usando su variante en blanco y
+    negro si estamos en el encuentro oculto contra Gaster (y ese archivo
+    existe); si no, la ruta normal de siempre.
+    """
+    base_dir = carpeta if carpeta else ASSETS_PATH
+    if MODO_OCULTO_GASTER:
+        nombre_bw = MAPEO_ASSETS_GASTER.get(nombre_archivo)
+        if nombre_bw:
+            ruta_bw = os.path.join(base_dir, nombre_bw)
+            if os.path.exists(ruta_bw):
+                return ruta_bw
+    return os.path.join(base_dir, nombre_archivo)
+
+# --- Fondo del encuentro oculto (estático, blanco y negro) --------------
+def cargar_fondo_juego(width, height):
+    """
+    Devuelve el fondo de mesa ya escalado a (width, height): la variante
+    "fondo_juego_bw.png" durante el encuentro oculto contra Gaster (si el
+    archivo existe), o el fondo normal de siempre en cualquier otro caso.
+    """
+    ruta = fondo_path
+    if MODO_OCULTO_GASTER:
+        ruta_bw = os.path.join(ASSETS_PATH, "fondo_juego_bw.png")
+        if os.path.exists(ruta_bw):
+            ruta = ruta_bw
+    return pygame.transform.scale(pygame.image.load(ruta).convert(), (width, height))
+
+# --- Wingdings + MAYÚSCULAS: se aplica a TODO el texto del juego mientras
+# dure el encuentro con Gaster, sin tener que tocar cada llamada a
+# .render(...) del archivo (son cientos). pygame.font.Font es un tipo de
+# extensión en C e inmutable (no se le puede reasignar render directamente),
+# así que en vez de eso se lo subclasea y se reemplaza pygame.font.Font por
+# la subclase: toda fuente que se cree de ahí en adelante (con
+# pygame.font.Font(...) o pygame.font.SysFont(...)) queda con el render
+# "consciente de Gaster". Cuando MODO_OCULTO_GASTER está apagado (el 99%
+# del tiempo, cualquier partida normal) esto es completamente transparente.
+_wingdings_font_cache = {}
+_font_render_original = pygame.font.Font.render  # el render original de SDL_ttf, capturado ANTES de parchear nada
+FACTOR_TAMANO_WINGDINGS = 1.3  # Wingdings se ve más chico que la fuente normal a igual tamaño, se compensa un poco
+
+try:
+    class _FontConGaster(pygame.font.Font):
+        def render(self, text, antialias, color, background=None):
+            if MODO_OCULTO_GASTER and isinstance(text, str) and text:
+                alto = self.get_height()
+                tamano_wing = max(1, int(alto * FACTOR_TAMANO_WINGDINGS))
+                fuente_wing = _wingdings_font_cache.get(tamano_wing)
+                if fuente_wing is None:
+                    try:
+                        fuente_wing = pygame.font.Font(resource_path(os.path.join("assets", "wingding.ttf")), tamano_wing)
+                    except Exception as e:
+                        print(f"[GASTER] No se pudo cargar wingding.ttf ({e}), se mantiene la fuente normal.")
+                        fuente_wing = False  # False = "ya lo intenté y falló", no reintentar cada frame
+                    _wingdings_font_cache[tamano_wing] = fuente_wing
+                if fuente_wing:
+                    texto_final = text.upper()
+                    # Siempre se usa _font_render_original acá (nunca
+                    # self.render/fuente_wing.render) para no recursar
+                    # infinitamente sobre esta misma subclase.
+                    if background is not None:
+                        return _font_render_original(fuente_wing, texto_final, antialias, color, background)
+                    return _font_render_original(fuente_wing, texto_final, antialias, color)
+            if background is not None:
+                return _font_render_original(self, text, antialias, color, background)
+            return _font_render_original(self, text, antialias, color)
+
+    pygame.font.Font = _FontConGaster
+except TypeError as e:
+    # Si esta versión de pygame no permite subclasear Font, el encuentro
+    # oculto sigue funcionando igual, solo que sin el efecto Wingdings.
+    print(f"[GASTER] No se pudo aplicar el modo Wingdings ({e}); el resto del encuentro oculto funciona normal.")
+# ═══════════════════════════════════════════════════════════════════════
+
+
 # Colores (con alpha para transparencia)
 CAJA_JUG = (70, 130, 180, 60)   # Más transparente
 CAJA_BAJ = (100, 200, 100, 60)
@@ -192,8 +300,8 @@ def show_menu_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, ctrl_volumen):
     clock = pygame.time.Clock()
     
     # 1. Cargar las imágenes
-    img_reanudar = pygame.image.load(os.path.join(ASSETS_PATH, "renaudar_btn.png")).convert_alpha()
-    img_salir = pygame.image.load(os.path.join(ASSETS_PATH, "salir_btn.png")).convert_alpha()
+    img_reanudar = pygame.image.load(ruta_asset_modo("renaudar_btn.png", ASSETS_PATH)).convert_alpha()
+    img_salir = pygame.image.load(ruta_asset_modo("salir_btn.png", ASSETS_PATH)).convert_alpha()
     
     # 2. Unificar el tamaño de los botones
     btn_w, btn_h = 240, 60 
@@ -252,7 +360,15 @@ def show_menu_modal(screen, WIDTH, HEIGHT, ASSETS_PATH, ctrl_volumen):
         screen.blit(overlay, (0, 0))
 
         # Dibujar caja del modal
-        pygame.draw.rect(screen, (40, 40, 40), modal_rect, border_radius=12)
+        if MODO_OCULTO_GASTER:
+            ruta_cuadro_bw = os.path.join(ASSETS_PATH, "cuadro_bw.png")
+            if os.path.exists(ruta_cuadro_bw):
+                cuadro_img = pygame.transform.smoothscale(pygame.image.load(ruta_cuadro_bw).convert_alpha(), (w, h))
+                screen.blit(cuadro_img, modal_rect.topleft)
+            else:
+                pygame.draw.rect(screen, (40, 40, 40), modal_rect, border_radius=12)
+        else:
+            pygame.draw.rect(screen, (40, 40, 40), modal_rect, border_radius=12)
         pygame.draw.rect(screen, (150, 150, 150), modal_rect, 2, border_radius=12)
 
         # Dibujar Título
@@ -609,6 +725,12 @@ def get_card_image(card):
         nombre = "JokerV2.png"
     else:
         nombre = str(card) + ".png"
+
+    if MODO_OCULTO_GASTER and nombre == "back.png":
+        ruta_bw = os.path.join(ASSETS_PATH, "cartas", "back_bw.png")
+        if os.path.exists(ruta_bw):
+            return pygame.image.load(ruta_bw).convert_alpha()
+
     ruta = os.path.join(ASSETS_PATH, "cartas", nombre)
     if os.path.exists(ruta):
         return pygame.image.load(ruta).convert_alpha()
@@ -1029,7 +1151,10 @@ def draw_horizontal_pt_hand(player, rect):
     y = rect.y + (rect.height - card_height) // 2
 
     # Imagen PT.png
-    pt_img_path = os.path.join(ASSETS_PATH, "cartas", "PT.png")
+    if MODO_OCULTO_GASTER:
+        pt_img_path = os.path.join(ASSETS_PATH, "cartas", "PT_bw.png")
+    else:
+        pt_img_path = os.path.join(ASSETS_PATH, "cartas", "PT.png")
     if os.path.exists(pt_img_path):
         pt_img = pygame.image.load(pt_img_path).convert_alpha()
     else:
@@ -1414,6 +1539,18 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
 
     global ronudOne, roundTwo   # Para prueba
     global last_taken_card, last_taken_player
+    global MODO_OCULTO_GASTER
+    global fondo_img
+
+    # --- ENCUENTRO OCULTO: Gaster ---
+    # Se recalcula en CADA llamada a main() a partir del network_manager
+    # actual, así que una partida normal nunca hereda el modo oculto de un
+    # encuentro anterior con Gaster (y viceversa).
+    MODO_OCULTO_GASTER = bool(getattr(manager_de_red, "easter_egg_gaster", False))
+    if MODO_OCULTO_GASTER:
+        print("[GASTER] Encuentro oculto activado: aplicando skin especial (blanco y negro, Wingdings).")
+    fondo_img = cargar_fondo_juego(WIDTH, HEIGHT)
+
     # En ui2.py dentro de main()
     dragging_board_joker = False
     board_joker_data = None # Guardará { 'player': p, 'play_index': i, 'card': c, 'original_rect': r }
@@ -1497,6 +1634,11 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         print("[BOTS] Se detectó duelo 1vs1 contra LouisBot. Cargando sonidos de voz...")
                         #from volumen import ControlVolumen
                         pygame.mixer.music.load(resource_path("assets/sonido/GeniBot1.mp3"))
+                        pygame.mixer.music.play(-1)
+                        ctrl_volumen=ControlVolumen()
+                    elif any(hasattr(p, 'is_ai') and p.playerName == "W.D Gaster" for p in players):
+                        print("[GASTER] Encuentro oculto: cargando música 'oculto.mp3'...")
+                        pygame.mixer.music.load(resource_path("assets/sonido/oculto.mp3"))
                         pygame.mixer.music.play(-1)
                         ctrl_volumen=ControlVolumen()
                 except Exception as e:
@@ -1612,6 +1754,19 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 voz_substitute = pygame.mixer.Sound(voz_substitute_path)
                 voz_winner1_path = os.path.join(ASSETS_PATH, "sonido/GeniBot", "winner.wav")
                 voz_winner = pygame.mixer.Sound(voz_winner1_path)
+            elif any(hasattr(p, 'is_ai') and p.playerName == "W.D Gaster" for p in players):
+                voz_turno_path = resource_path(os.path.join("assets", "sonido", "Gaster", "turn.wav"))
+                voz_turno = pygame.mixer.Sound(voz_turno_path)
+                voz_bajarse_path = resource_path(os.path.join("assets", "sonido", "Gaster", "down.wav"))
+                voz_bajarse = pygame.mixer.Sound(voz_bajarse_path)
+                voz_end_path = resource_path(os.path.join("assets", "sonido", "Gaster", "end.wav"))
+                voz_end = pygame.mixer.Sound(voz_end_path)
+                voz_insert_path = resource_path(os.path.join("assets", "sonido", "Gaster", "insert.wav"))
+                voz_insert = pygame.mixer.Sound(voz_insert_path)
+                voz_substitute_path = resource_path(os.path.join("assets", "sonido", "Gaster", "substitute.wav"))
+                voz_substitute = pygame.mixer.Sound(voz_substitute_path)
+                voz_winner_path = resource_path(os.path.join("assets", "sonido", "Gaster", "winner.wav"))
+                voz_winner = pygame.mixer.Sound(voz_winner_path)
         except Exception as e:
             print("ERROR AL CARGAR LAS VOCES DEL BOT", e)
             voz_turno = None
@@ -2818,7 +2973,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             elif event.type == pygame.VIDEORESIZE:
                 WIDTH, HEIGHT = event.w, event.h
                 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-                fondo_img = pygame.transform.scale(pygame.image.load(fondo_path).convert(), (WIDTH, HEIGHT))
+                fondo_img = cargar_fondo_juego(WIDTH, HEIGHT)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if esta_penalizado(jugador_local): continue 
                 idx_descarte = 3 if (roundThree or roundFour) else 2 #prueba
@@ -4746,7 +4901,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             """Dibuja un resaltado muy sutil (debajo de todo) sobre la caja del jugador que tenga el turno."""
             try:
                 alpha = 80  # casi invisible pero perceptible
-                color = (255, 0, 0, alpha)
+                color = (255, 0, 0, alpha) if not MODO_OCULTO_GASTER else (128, 128, 128, alpha)
                 for p in players:
                     if not getattr(p, "isHand", False):
                         continue
@@ -4963,7 +5118,8 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             cuadros_interactivos[nombre] = rect # Aquí guardamos la zona para clic
             img_key = nombre.split('_')[0].lower() # trio, seguidilla, descarte...
             if "tomar" not in img_key:
-                png_path = os.path.join(ASSETS_PATH, f"{img_key}.png")
+                nombre_png = f"{img_key}.png"
+                png_path = ruta_asset_modo(nombre_png, ASSETS_PATH) if img_key in ("seguidilla", "descarte") else os.path.join(ASSETS_PATH, nombre_png)
                 if os.path.exists(png_path):
                     img = pygame.image.load(png_path).convert_alpha()
                     img_scaled = pygame.transform.smoothscale(img, (w_uso - 8, h_uso - 8))
@@ -4971,6 +5127,10 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             elif img_key == "tomar carta":
                 # Lógica especial para el mazo boca abajo
                 back_path = os.path.join(ASSETS_PATH, "cartas", "PT2.png")
+                if MODO_OCULTO_GASTER:
+                    ruta_bw = os.path.join(ASSETS_PATH, "cartas", "back2_bw.png")
+                    if os.path.exists(ruta_bw):
+                        back_path = ruta_bw
                 if os.path.exists(back_path):
                     img = pygame.transform.smoothscale(pygame.image.load(back_path).convert_alpha(), (w_uso-8, h_uso-8))
                     screen.blit(img, (current_x + 4, y_uso + 4))
@@ -4988,7 +5148,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             bajarse_rect = pygame.Rect(centro_x - (cuadro_w_fino // 2), boton_y, cuadro_w_fino, boton_h)
             
             # Dibujar imagen
-            path_b = os.path.join(ASSETS_PATH, "bajarse.png")
+            path_b = ruta_asset_modo("bajarse.png", ASSETS_PATH)
             if os.path.exists(path_b):
                 img = pygame.transform.smoothscale(pygame.image.load(path_b).convert_alpha(), (bajarse_rect.width, bajarse_rect.height))
                 screen.blit(img, bajarse_rect.topleft)
@@ -5000,7 +5160,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             descartar_rect = pygame.Rect(rect_desc.x, boton_y, rect_desc.width, boton_h)
             
             # Dibujar imagen
-            path_d = os.path.join(ASSETS_PATH, "descartar.png")
+            path_d = ruta_asset_modo("descartar.png", ASSETS_PATH)
             if os.path.exists(path_d):
                 img = pygame.transform.smoothscale(pygame.image.load(path_d).convert_alpha(), (descartar_rect.width, descartar_rect.height))
                 screen.blit(img, descartar_rect.topleft)
@@ -5014,7 +5174,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             centro_compra = (rect_t1.x + rect_t2.right) // 2
             comprar_rect = pygame.Rect(centro_compra - (cuadro_w_carta // 2), boton_y, cuadro_w_carta, boton_h)
             
-            path_c = os.path.join(ASSETS_PATH, "comprar_carta.png")
+            path_c = ruta_asset_modo("comprar_carta.png", ASSETS_PATH)
             if os.path.exists(path_c):
                 img = pygame.transform.smoothscale(pygame.image.load(path_c).convert_alpha(), (comprar_rect.width, comprar_rect.height))
                 screen.blit(img, comprar_rect.topleft)
@@ -5024,12 +5184,20 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
         if jugador_local:
             etiqueta_btn = f"Ordenar: {modo_orden}"
             btn_ordenar = pygame.Rect(WIDTH - 190, HEIGHT - 160, 170, 40)
-            draw_simple_button(
-                screen, btn_ordenar, etiqueta_btn,
-                get_game_font(10),
-                bg=(40, 80, 130),
-                fg=(255, 255, 255)
-            )
+            if not MODO_OCULTO_GASTER:
+                draw_simple_button(
+                    screen, btn_ordenar, etiqueta_btn,
+                    get_game_font(10),
+                    bg=(40, 80, 130),
+                    fg=(255, 255, 255)
+                )
+            else:
+                draw_simple_button(
+                    screen, btn_ordenar, etiqueta_btn,
+                    get_game_font(10),
+                    bg=(128, 128, 128),
+                    fg=(255, 255, 255)
+                )
 
         # 5. Botón "CONCLUIR RONDA" — visible solo para el host
         # DESACTIVADO a pedido: se comenta en vez de borrar, por si se
@@ -5124,7 +5292,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
 
         menu_rect = pygame.Rect(menu_x, menu_y, menu_w, menu_h)
 
-        menu_img_path = os.path.join(ASSETS_PATH, "menu_btn.png")
+        menu_img_path = ruta_asset_modo("menu_btn.png", ASSETS_PATH)
         if os.path.exists(menu_img_path):
             menu_img = pygame.image.load(menu_img_path).convert_alpha()
             img = pygame.transform.smoothscale(menu_img, (menu_rect.width, menu_rect.height))
@@ -5330,7 +5498,10 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 y = nombre_rect.bottom + 6
                 rect = pygame.Rect(int(x), int(y), int(width), int(height))
                 s = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-                s.fill((255, 0, 0, 140))  # rojo semi-transparente
+                if not MODO_OCULTO_GASTER:
+                    s.fill((255, 0, 0, 140))  # rojo semi-transparente
+                else:
+                    s.fill((128, 128, 128, 140)) #Gris medio, semi-transparente
                 screen.blit(s, rect.topleft)
             except Exception:
                 pass
@@ -5339,7 +5510,10 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
         if jugador_local:
             jug_rect = boxes.get("jug1")
             if jug_rect:
-                borde_color = (255,0,0) if getattr(jugador_local, "isHand", False) else (0,0,0)
+                if not MODO_OCULTO_GASTER:
+                    borde_color = (255,0,0) if getattr(jugador_local, "isHand", False) else (0,0,0)
+                else:
+                    borde_color = (128,128,128) if getattr(jugador_local, "isHand", False) else (0,0,0)
                 nombre_txt = str(getattr(jugador_local, "playerName", "Jugador"))
                 max_w_nombre = max(40, jug_rect.width - 8)
                 font_nombre_used = get_fitting_font(nombre_txt, max_w_nombre, BASE_NOMBRE_SIZE)
@@ -5397,7 +5571,10 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
 
         # --- Jugadores superiores ---
         for jugador, recuadro in jugadores_superiores:
-            borde_color = (255,0,0) if getattr(jugador, "isHand", False) else (0,0,0)
+            if not MODO_OCULTO_GASTER:
+                borde_color = (255,0,0) if getattr(jugador, "isHand", False) else (0,0,0)
+            else:
+                borde_color = (128,128,128) if getattr(jugador, "isHand", False) else (0,0,0)
             nombre_txt = str(getattr(jugador, "playerName", "Jugador"))
             max_w_nombre = max(30, recuadro.width - 8)
             font_nombre_used = get_fitting_font(nombre_txt, max_w_nombre, BASE_NOMBRE_SIZE)
@@ -5721,8 +5898,12 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             label_rect = label_surf.get_rect(centerx=ronda_rect.centerx, top=start_y)
             num_rect = num_surf.get_rect(centerx=ronda_rect.centerx, top=label_rect.bottom + spacing)
 
-            render_text_with_border(label_text, font_label, (255, 255, 255), (100, 0, 0), (label_rect.x, label_rect.y), screen)
-            render_text_with_border(num_text, font_num, (255, 255, 255), (100, 0, 0), (num_rect.x, num_rect.y), screen)
+            if not MODO_OCULTO_GASTER:
+                render_text_with_border(label_text, font_label, (255, 255, 255), (100, 0, 0), (label_rect.x, label_rect.y), screen)
+                render_text_with_border(num_text, font_num, (255, 255, 255), (100, 0, 0), (num_rect.x, num_rect.y), screen)
+            else:
+                render_text_with_border(label_text, font_label, (255, 255, 255), (128, 128, 128), (label_rect.x, label_rect.y), screen)
+                render_text_with_border(num_text, font_num, (255, 255, 255), (128, 128, 128), (num_rect.x, num_rect.y), screen)
             cuadros_interactivos["Ronda"] = ronda_rect
 
         # --- Turno: mostrar el nombre del jugador en turno ---
@@ -5758,14 +5939,14 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
 
         # --- Mantener Menú con imagen si existe ---
         if menu_rect:
-            menu_img_path = os.path.join(ASSETS_PATH, "menu.png")
+            menu_img_path = ruta_asset_modo("menu.png", ASSETS_PATH)
             if os.path.exists(menu_img_path):
                 menu_img = pygame.image.load(menu_img_path).convert_alpha()
                 img = pygame.transform.smoothscale(menu_img, (menu_rect.width, menu_rect.height))
                 screen.blit(img, menu_rect.topleft)
             cuadros_interactivos["Menú"] = menu_rect
         # --- Botón "Menú" ---
-            menu_img_path = os.path.join(ASSETS_PATH, "menu.png")
+            menu_img_path = ruta_asset_modo("menu.png", ASSETS_PATH)
             if os.path.exists(menu_img_path):
                 menu_img = pygame.image.load(menu_img_path).convert_alpha()
                 img = pygame.transform.smoothscale(menu_img, (menu_rect.width, menu_rect.height))
@@ -6211,15 +6392,17 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         aplausos_sound_path = os.path.join(ASSETS_PATH, "sonido", "aplauso.wav")
                         aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
                         aplausos_sound.play()
-                        pygame.mixer.music.fadeout(4000)
-                        pygame.mixer.music.stop()
+                        if not MODO_OCULTO_GASTER:
+                            # La música de Gaster ('oculto.mp3') nunca se detiene.
+                            pygame.mixer.music.fadeout(4000)
+                            pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             # Pequeña pausa para que la voz de la última acción
                             # del bot (fin de turno / inserción / etc.) no se
                             # encime con la voz de "ganador".
                             pygame.time.wait(1000)
                             voz_winner1.play()
-                        elif hasattr(jugador, "is_ai") and jugador.playerName == "GeniBot":
+                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "Gaster"):
                             pygame.time.wait(1000)
                             voz_winner.play()
                         fase = "fin1"
@@ -6258,12 +6441,13 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                     fase = "eleccion"
                     roundOne = False
                     roundTwo = True   # Para Prueba
-                    if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
-                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot2.mp3"))
-                        pygame.mixer.music.play(-1)
-                    elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
-                        pygame.mixer.music.load(resource_path("assets/sonido/GeniBot2.mp3"))
-                        pygame.mixer.music.play(-1)
+                    if not MODO_OCULTO_GASTER:
+                        if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
+                            pygame.mixer.music.load(resource_path("assets/sonido/LouisBot2.mp3"))
+                            pygame.mixer.music.play(-1)
+                        elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
+                            pygame.mixer.music.load(resource_path("assets/sonido/GeniBot2.mp3"))
+                            pygame.mixer.music.play(-1)
             continue
         
         if fase == "ronda2":
@@ -6275,12 +6459,14 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         aplausos_sound_path = os.path.join(ASSETS_PATH, "sonido", "aplauso.wav")
                         aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
                         aplausos_sound.play()
-                        pygame.mixer.music.fadeout(4000)
-                        pygame.mixer.music.stop()
+                        if not MODO_OCULTO_GASTER:
+                            # La música de Gaster ('oculto.mp3') nunca se detiene.
+                            pygame.mixer.music.fadeout(4000)
+                            pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
                             voz_winner2.play()
-                        elif hasattr(jugador, "is_ai") and jugador.playerName == "GeniBot":
+                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "Gaster"):
                             pygame.time.wait(1000)
                             voz_winner.play()
                         fase = "fin2"
@@ -6317,12 +6503,13 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         fase = "eleccion"
                         roundTwo = False
                         roundThree = True
-                    if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
-                        pygame.mixer.music.load(resource_path("assets/sonido/LouisBot1.mp3"))
-                        pygame.mixer.music.play(-1)
-                    elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
-                        pygame.mixer.music.load(resource_path("assets/sonido/GeniBot3.mp3"))
-                        pygame.mixer.music.play(-1)
+                    if not MODO_OCULTO_GASTER:
+                        if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
+                            pygame.mixer.music.load(resource_path("assets/sonido/LouisBot1.mp3"))
+                            pygame.mixer.music.play(-1)
+                        elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
+                            pygame.mixer.music.load(resource_path("assets/sonido/GeniBot3.mp3"))
+                            pygame.mixer.music.play(-1)
                 continue
 
         if fase == "ronda3":
@@ -6334,12 +6521,14 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         aplausos_sound_path = os.path.join(ASSETS_PATH, "sonido", "aplauso.wav")
                         aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
                         aplausos_sound.play()
-                        pygame.mixer.music.fadeout(4000)
-                        pygame.mixer.music.stop()
+                        if not MODO_OCULTO_GASTER:
+                            # La música de Gaster ('oculto.mp3') nunca se detiene.
+                            pygame.mixer.music.fadeout(4000)
+                            pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
                             voz_winner3.play() 
-                        elif hasattr(jugador, "is_ai") and jugador.playerName == "GeniBot":
+                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "Gaster"):
                             pygame.time.wait(1000)
                             voz_winner.play()                   
                         fase = "fin3"
@@ -6376,12 +6565,13 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         fase = "eleccion"
                         roundThree = False
                         roundFour = True
-                        if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
-                            pygame.mixer.music.load(resource_path("assets/sonido/LouisBot4.mp3"))
-                            pygame.mixer.music.play(-1)
-                        elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
-                            pygame.mixer.music.load(resource_path("assets/sonido/GeniBot4.mp3"))
-                            pygame.mixer.music.play(-1)
+                        if not MODO_OCULTO_GASTER:
+                            if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
+                                pygame.mixer.music.load(resource_path("assets/sonido/LouisBot4.mp3"))
+                                pygame.mixer.music.play(-1)
+                            elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
+                                pygame.mixer.music.load(resource_path("assets/sonido/GeniBot4.mp3"))
+                                pygame.mixer.music.play(-1)
                 continue
 
         if fase == "ronda4":
@@ -6394,12 +6584,14 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
                         aplausos_sound.play()
                         jugador.isHand = False
-                        pygame.mixer.music.fadeout(4000)
-                        pygame.mixer.music.stop()
+                        if not MODO_OCULTO_GASTER:
+                            # La música de Gaster ('oculto.mp3') nunca se detiene.
+                            pygame.mixer.music.fadeout(4000)
+                            pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
                             voz_winner3.play()
-                        elif hasattr(jugador, "is_ai") and jugador.playerName == "GeniBot":
+                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "Gaster"):
                             pygame.time.wait(1000)
                             voz_winner.play()
                         fase = "fin4"
@@ -6435,12 +6627,13 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         fase = "eleccion"
                         roundFour = False
                         roundOne = True
-                        if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
-                            pygame.mixer.music.load(resource_path("assets/sonido/LouisBot3.mp3"))
-                            pygame.mixer.music.play(-1)
-                        elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
-                            pygame.mixer.music.load(resource_path("assets/sonido/GeniBot1.mp3"))
-                            pygame.mixer.music.play(-1)
+                        if not MODO_OCULTO_GASTER:
+                            if any(p.playerName == "LouisBot" and hasattr(p, 'is_ai') for p in players):
+                                pygame.mixer.music.load(resource_path("assets/sonido/LouisBot3.mp3"))
+                                pygame.mixer.music.play(-1)
+                            elif any(p.playerName == "GeniBot" and hasattr(p, 'is_ai') for p in players):
+                                pygame.mixer.music.load(resource_path("assets/sonido/GeniBot1.mp3"))
+                                pygame.mixer.music.play(-1)
                 continue
 
         if fase == "game_over":
@@ -6529,7 +6722,10 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 rect = surf.get_rect(center=(base_x, start_y + i * line_h))
                 # borde negro alrededor (8 direcciones)
                 for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
-                    screen.blit(font_msg.render(line, True, ( (165, 42, 42))), (rect.x + dx, rect.y + dy))
+                    if not MODO_OCULTO_GASTER:
+                        screen.blit(font_msg.render(line, True, ( (165, 42, 42))), (rect.x + dx, rect.y + dy))
+                    else:
+                        screen.blit(font_msg.render(line, True, ( (128, 128, 128))), (rect.x + dx, rect.y + dy))
                 screen.blit(surf, rect)
         elif mensaje_temporal and time.time() - mensaje_tiempo >= 5:
             mensaje_temporal = ""
@@ -6538,6 +6734,13 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
     
         pygame.display.flip()
         pygame.time.Clock().tick(60) # Esto mantiene el juego estable a 60 FPS
+
+    # Al salir del bucle del juego (partida terminada o "Salir" a mitad de
+    # partida) se apaga el modo Gaster inmediatamente: si no, la fuente
+    # Wingdings y el resto de la skin oculta se quedarían pegadas en el
+    # menú principal hasta la próxima partida.
+    #globalMODO_OCULTO_GASTER
+    MODO_OCULTO_GASTER = False
     return
 
 
@@ -6789,7 +6992,7 @@ def mostrar_ganador_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH
 
     # Botón "Salir" (mismo diseño que el del modal de Menú), justo encima del mensaje final
     btn_w, btn_h = min(ancho_rect - 40, 240), 60
-    img_salir = pygame.image.load(os.path.join(ASSETS_PATH, "salir_btn.png")).convert_alpha()
+    img_salir = pygame.image.load(ruta_asset_modo("salir_btn.png", ASSETS_PATH)).convert_alpha()
     img_salir = pygame.transform.smoothscale(img_salir, (btn_w, btn_h))
     btn_exit = pygame.Rect(center_x - btn_w // 2, y_rect + alto_rect - 110, btn_w, btn_h)
     screen.blit(img_salir, btn_exit.topleft)

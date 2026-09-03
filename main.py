@@ -51,8 +51,8 @@ def main():
                 # Cargar los modelos de IA de los bots es lento y, sin esto,
                 # deja la ventana en negro y en silencio mientras carga. En
                 # vez de eso, mostramos una pantalla animada (imágenes con
-                # fundido + música "espera.mp3") mientras la carga real
-                # ocurre en un hilo aparte.
+                # fundido + música de espera) mientras la carga real ocurre
+                # en un hilo aparte.
                 import functools
                 from loading_screen import mostrar_pantalla_carga
 
@@ -63,7 +63,19 @@ def main():
                     network_manager,
                     len(network_manager.connected_players)
                 )
-                bots_precargados = mostrar_pantalla_carga(pantalla_actual, ancho_actual, alto_actual, cargar_bots)
+
+                if getattr(network_manager, 'easter_egg_gaster', False):
+                    # Encuentro oculto: pantalla de carga propia (imágenes y
+                    # música distintas a las de un duelo normal contra bots).
+                    bots_precargados = mostrar_pantalla_carga(
+                        pantalla_actual, ancho_actual, alto_actual, cargar_bots,
+                        nombres_imagenes=["Gaster1.png", "Gaster2.png", "Gaster3.png", "Gaster4.png", "Gaster5.png", "Gaster6.png", "Gaster7.png"],
+                        subcarpeta_imagenes="carga_gaster",
+                        musica_relpath=os.path.join("assets", "sonido", "GasterLoading.mp3"),
+                        texto_carga=""
+                    )
+                else:
+                    bots_precargados = mostrar_pantalla_carga(pantalla_actual, ancho_actual, alto_actual, cargar_bots)
 
             if network_manager.is_host:
                 jugadores = network_manager.connected_players
@@ -85,7 +97,13 @@ def main():
                 ui_manager.SCREEN.fill((0, 0, 0))
                 pygame.display.flip()
 
+                # Se limpia toda la configuración de bots/encuentro oculto
+                # para que una partida normal posterior no arrastre nada de
+                # esto (ni el flag de Gaster, ni bots de una sala anterior).
                 network_manager.game_started = False
+                network_manager.num_bots = 0
+                network_manager.bot_duel_config = None
+                network_manager.easter_egg_gaster = False
                 continue
             else:
                 network_manager.running = True
@@ -98,6 +116,9 @@ def main():
                 pygame.display.flip()
 
                 network_manager.game_started = False
+                network_manager.num_bots = 0
+                network_manager.bot_duel_config = None
+                network_manager.easter_egg_gaster = False
                 continue
 
         elif result is False:

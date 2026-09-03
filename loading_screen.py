@@ -51,32 +51,35 @@ DURACION_FADE = 1.1
 TEXTO_CARGA = "Cargando modelos de IA, la partida empezará en breve"
 
 
-def _cargar_imagenes_fondo(screen_width, screen_height):
+def _cargar_imagenes_fondo(screen_width, screen_height, nombres_imagenes, subcarpeta):
     """Carga y escala las imágenes de fondo disponibles. Si falta alguna
     (o todas), simplemente se ignora -se anima con las que sí existan-,
     y si no hay ninguna se usa un fondo sólido como respaldo."""
     imagenes = []
-    for nombre in NOMBRES_IMAGENES_CARGA:
-        ruta = resource_path(os.path.join("assets", "pantalla_carga", nombre))
+    for nombre in nombres_imagenes:
+        ruta = resource_path(os.path.join("assets", subcarpeta, nombre))
         try:
             img = pygame.image.load(ruta).convert()
             img = pygame.transform.scale(img, (screen_width, screen_height))
             imagenes.append(img)
         except Exception as e:
-            print(f"[CARGA IA] No se pudo cargar '{nombre}' ({e}), se omite.")
+            print(f"[CARGA] No se pudo cargar '{nombre}' ({e}), se omite.")
     return imagenes
 
 
-def _reproducir_musica_espera():
+def _reproducir_musica_espera(musica_relpath):
     try:
-        ruta_musica = resource_path(os.path.join("assets", "sonido", "espera.mp3"))
+        ruta_musica = resource_path(musica_relpath)
         pygame.mixer.music.load(ruta_musica)
         pygame.mixer.music.play(-1)
     except Exception as e:
-        print(f"[CARGA IA] No se pudo reproducir 'espera.mp3' ({e}).")
+        print(f"[CARGA] No se pudo reproducir '{musica_relpath}' ({e}).")
 
 
-def mostrar_pantalla_carga(screen, screen_width, screen_height, worker_fn):
+def mostrar_pantalla_carga(screen, screen_width, screen_height, worker_fn,
+                            nombres_imagenes=None, subcarpeta_imagenes="pantalla_carga",
+                            musica_relpath=os.path.join("assets", "sonido", "espera.mp3"),
+                            texto_carga=TEXTO_CARGA):
     """
     Muestra la animación de carga en `screen` mientras `worker_fn` corre en
     un hilo aparte, y devuelve lo que `worker_fn` haya retornado.
@@ -84,7 +87,14 @@ def mostrar_pantalla_carga(screen, screen_width, screen_height, worker_fn):
     `worker_fn` debe ser una función sin argumentos (usar functools.partial
     o una lambda si necesita parámetros) que NO haga llamadas a pygame.display
     (esas deben quedar siempre en el hilo principal).
+
+    Los parámetros opcionales permiten reutilizar esta misma pantalla con
+    imágenes/música distintas (p. ej. el encuentro oculto contra Gaster usa
+    su propia carpeta de imágenes y su propia música de espera).
     """
+    if nombres_imagenes is None:
+        nombres_imagenes = NOMBRES_IMAGENES_CARGA
+
     resultado = {}
     excepcion = {}
 
@@ -99,9 +109,9 @@ def mostrar_pantalla_carga(screen, screen_width, screen_height, worker_fn):
 
     if not pygame.mixer.get_init():
         pygame.mixer.init()
-    _reproducir_musica_espera()
+    _reproducir_musica_espera(musica_relpath)
 
-    imagenes = _cargar_imagenes_fondo(screen_width, screen_height)
+    imagenes = _cargar_imagenes_fondo(screen_width, screen_height, nombres_imagenes, subcarpeta_imagenes)
 
     try:
         font_path = resource_path(os.path.join("assets", "pixel.ttf"))
@@ -134,7 +144,7 @@ def mostrar_pantalla_carga(screen, screen_width, screen_height, worker_fn):
             elif event.type == pygame.VIDEORESIZE:
                 screen_width, screen_height = event.size
                 screen = pygame.display.set_mode((screen_width, screen_height), pygame.RESIZABLE)
-                imagenes = _cargar_imagenes_fondo(screen_width, screen_height)
+                imagenes = _cargar_imagenes_fondo(screen_width, screen_height, nombres_imagenes, subcarpeta_imagenes)
 
         # --- Fondo con transición (fade) entre imágenes ---
         if imagenes:
@@ -164,7 +174,7 @@ def mostrar_pantalla_carga(screen, screen_width, screen_height, worker_fn):
         if puntos_tiempo >= 0.45:
             puntos_tiempo = 0.0
             puntos_cantidad = (puntos_cantidad + 1) % 4
-        texto_final = TEXTO_CARGA + ("." * puntos_cantidad)
+        texto_final = texto_carga + ("." * puntos_cantidad)
         texto_surf = fuente.render(texto_final, True, (255, 255, 255))
         texto_rect = texto_surf.get_rect(center=(screen_width // 2, int(screen_height * 0.88)))
 

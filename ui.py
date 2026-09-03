@@ -595,6 +595,10 @@ class UIManager:
         self.message_input_box = InputBox(0, 0, ib_w, ib_h, smaller_font)
         self.bot_room_name_input = InputBox(0, 0, ib_w, ib_h, smaller_font)
 
+        # --- Encuentro oculto (easter egg): combinación secreta de teclas
+        # "gaster", solo activa en el menú principal. Ver handle_events().
+        self.combo_secreto_buffer = ""
+
     def update_animation(self, delta_time):
         self.angulo_izquierda = (self.angulo_izquierda + 50 * delta_time) % 360
         self.angulo_derecha = (self.angulo_derecha + 50 * delta_time) % 360
@@ -1720,6 +1724,38 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
         time.sleep(1.2)
         return "launch_ui2"
 
+    def iniciar_duelo_gaster(self):
+        """
+        Easter egg: al escribir "gaster" en el menú principal, se arranca un
+        duelo 1vs1 OCULTO contra el bot Gaster (Gaster.pt), sin pasar por la
+        Sala de Bots ni pedir confirmación -es un secreto, no un botón más-.
+        Deja marcado network_manager.easter_egg_gaster para que main.py use
+        la pantalla de carga especial y ui2.py active toda la skin oculta
+        (blanco y negro, Wingdings, fondo animado, música/voces propias).
+        """
+        nombre_jugador = (getattr(self.network_manager, "playerName", None) or "Unknown").strip() or "Unknown"
+
+        exito = self.network_manager.start_server(nombre_jugador, "", 2, "Encuentro oculto")
+        if not exito:
+            print("[GASTER] No se pudo iniciar el servidor local para el encuentro oculto.")
+            return None
+
+        self.network_manager.num_bots = 1
+        self.network_manager.bot_duel_config = {"name": "W.D Gaster", "model_file": "Gaster.pt"}
+        self.network_manager.easter_egg_gaster = True
+
+        if not self.network_manager.canStartGame():
+            print("[GASTER] No se pudo iniciar el encuentro oculto (se necesitan al menos dos jugadores).")
+            self.network_manager.easter_egg_gaster = False
+            return None
+
+        self.network_manager.startGame()
+        self.network_manager.stop_broadcast()
+        print(f"[GASTER] Encuentro oculto activado: {nombre_jugador} vs Gaster.")
+
+        time.sleep(1.2)
+        return "launch_ui2"
+
     def handle_events(self):
         if not pygame.get_init():
             return False
@@ -1730,6 +1766,17 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
                     return False
                 else:
                     continue
+
+            # --- Easter egg: combinación secreta "gaster", solo en el menú
+            # principal (no en la Sala de Bots ni en ninguna otra pantalla).
+            if event.type == pygame.KEYDOWN and self.current_screen == "main":
+                if event.unicode and event.unicode.isalpha():
+                    self.combo_secreto_buffer = (self.combo_secreto_buffer + event.unicode.lower())[-len("gaster"):]
+                    if self.combo_secreto_buffer == "gaster":
+                        self.combo_secreto_buffer = ""
+                        resultado = self.iniciar_duelo_gaster()
+                        if resultado == "launch_ui2":
+                            return "launch_ui2"
 
             if event.type == pygame.VIDEORESIZE:
                 self.SCREEN_WIDTH, self.SCREEN_HEIGHT = event.size
