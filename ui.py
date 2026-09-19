@@ -172,7 +172,7 @@ class UIManager:
         self.SCREEN_HEIGHT = screen_height
         self.SCALE = min(screen_width / REF_WIDTH, screen_height / REF_HEIGHT)
         self.ASSETS_PATH = resource_path("assets")
-        self.FONT_FILE = os.path.join(self.ASSETS_PATH, "PressStart2P-Regular.ttf")
+        self.FONT_FILE = os.path.join(self.ASSETS_PATH, "Pixel.ttf")
         self.cacheDeFuentes = {}
         self.network_manager = network_manager
 
@@ -302,12 +302,26 @@ class UIManager:
         if scaled_size in self.cacheDeFuentes:
             return self.cacheDeFuentes[scaled_size]
         try:
-            font_path = resource_path(os.path.join("assets", "PressStart2P-Regular.ttf"))
+            font_path = resource_path(os.path.join("assets", "Pixel.ttf"))
             f = pygame.font.Font(font_path, scaled_size)
         except:
             f = pygame.font.SysFont("arial", scaled_size)
         self.cacheDeFuentes[scaled_size] = f
         return f
+    
+    def get_font2(self, size):
+            scaled_size = max(8, int(size * self.SCALE))
+            if scaled_size in self.cacheDeFuentes:
+                pass
+                #return self.cacheDeFuentes[scaled_size]
+            try:
+                font_path = resource_path(os.path.join("assets", "PressStart2P-Regular.ttf"))
+                f = pygame.font.Font(font_path, scaled_size)
+            except Exception as e:
+                print(f"ERROR CON LA FUENTE PIXELADA: {e}")
+                f = pygame.font.SysFont("arial", scaled_size)
+            self.cacheDeFuentes[scaled_size] = f
+            return f
 
     def init_components(self):
         self.crear_partida_img = pygame.image.load(resource_path("assets/crear_button.png")).convert_alpha()
@@ -685,20 +699,6 @@ class UIManager:
         ('nombre', 'Ricardo González'),
         ('espacio', ''),
 
-        ('departamento', 'INTELIGENCIA ARTIFICIAL'),
-        ('rol', 'Director de IA'),
-        ('nombre', 'Louis Mogollón'),
-        ('espacio', ''),
-        ('rol', 'Entrenamiento y Aprendizaje por Refuerzo'),
-        ('nombre', 'Louis Mogollón'),
-        ('espacio', ''),
-
-        ('departamento', 'REFACTORIZACIÓN'),
-        ('rol', 'Encargados de Refactorización'),
-        ('nombre', 'Eta vaina la pongo dejpuej xd'),
-        ('nombre', 'Eta vaina también la pongo dejpuej xd'),
-        ('espacio', ''),
-
         ('departamento', 'TESTING Y QA'),
         ('rol', 'Director de QA'),
         ('nombre', 'Carlos Romero'),
@@ -723,6 +723,89 @@ class UIManager:
         ('nombre', 'Luis Moreno'),
         ('espacio', ''),
 
+        ('tanda', 'SEGUNDA TANDA DE DESARROLLO'),
+        ('espacio', ''),
+        ('espacio', ''),
+
+        ('departamento', 'FRONTEND / INTERFAZ DE USUARIO'),
+        ('rol', 'Director de Frontend'),
+        ('nombre', 'Jesús Rivero'),
+        ('espacio', ''),
+        ('rol', 'Desarrolladores de Interfaz'),
+        ('nombre', 'Jesús Rivero'),
+        ('nombre', 'Luis Escalona'),
+        ('nombre', 'Gerardo Hernández'),
+        ('nombre', 'Karina Román'),
+        ('nombre', 'Jhadiel Navas'),
+        ('nombre', 'Daniel Castro'),
+        ('nombre', 'Ana Sánchez'),
+        ('nombre', 'Lismar Abarca'),
+        ('nombre', 'Victor Davalillo'),
+        ('espacio', ''),
+
+        ('departamento', 'BACKEND — LÓGICA DE JUEGO'),
+        ('rol', 'Director de Backend de Lógica'),
+        ('nombre', 'Miguel Blanco'),
+        ('espacio', ''),
+        ('rol', 'Programadores de Reglas y Motor de Juego'),
+        ('nombre', 'Miguel Blanco'),
+        ('nombre', 'Miguel Torres'),
+        ('nombre', 'Yonaiker Andrade'),
+        ('nombre', 'Erick Torrealba'),
+        ('nombre', 'Samuel Pérez'),
+        ('nombre', 'Gissell Leal'),
+        ('nombre', 'Nelbin Torrelles'),
+        ('nombre', 'Clara Salamanca'),
+        ('nombre', 'Miguel Azuaje'),
+        ('espacio', ''),
+
+        ('departamento', 'BACKEND — REDES Y MULTIJUGADOR'),
+        ('rol', 'Director de Backend de Redes'),
+        ('nombre', 'Valentín Ortíz'),
+        ('espacio', ''),
+        ('rol', 'Programadores de Networking'),
+        ('nombre', 'Valentín Ortíz'),
+        ('nombre', 'María Camacho'),
+        ('nombre', 'María José Escalona'),
+        ('nombre', 'María Yépez'),
+        ('nombre', 'Yonaiker Garrido'),
+        ('nombre', 'Nixon Lucena'),
+        ('nombre', 'Jarbi Sequera'),
+        ('nombre', 'Oscar Aguilar'),
+        ('nombre', 'Ray Yépez'),
+        ('espacio', ''),
+
+        ('departamento', 'REFACTORIZACIÓN'),
+        ('rol', 'Encargados de Refactorización'),
+        ('nombre', 'Osmar Cuicas'),
+        ('nombre', 'Daniela Figueroa'),
+        ('nombre', 'Isaac Sánchez'),
+        ('espacio', ''),
+
+        ('departamento', 'TESTING Y QA'),
+        ('rol', 'Director de QA'),
+        ('nombre', 'Isaac Sánchez'),
+        ('espacio', ''),
+        ('rol', 'Testers'),
+        ('nombre', 'Isaac Sánchez'),
+        ('nombre', 'Lilibeth Carrillo'),
+        ('nombre', 'Fabiola Barrios'),
+        ('nombre', 'Andimar Álvarez'),
+        ('nombre', 'Yessica Linarez'),
+        ('nombre', 'Daniela Figueroa'),
+        ('espacio', ''),
+
+        ('departamento', 'DEBUGGING Y CONTROL DE VERSIONES'),
+        ('rol', 'Encargados de Debugging y Manejo de GitHub'),
+        ('nombre', 'Isaac Sánchez'),
+        ('nombre', 'Osmar Cuicas'),
+        ('nombre', 'Daniela Figueroa'),
+        ('nombre', 'Valentín Ortíz'),
+        ('nombre', 'Miguel Blanco'),
+        ('espacio', ''),
+
+        ('tanda', 'COMPLEMENTOS EXTRAS'),
+
         ('departamento', 'ARTE Y SONIDO'),
         ('rol', 'Arte y Assets Visuales'),
         ('nombre', 'Fernando Hernández'),
@@ -730,6 +813,7 @@ class UIManager:
         ('nombre', 'Gustavo Álvarez'),
         ('nombre', 'Ricardo González'),
         ('nombre', 'Louis Mogollón'),
+        ('nombre', 'Génesis Carrasco'),
         ('nombre', 'Gémini Nano Banana Pro'),
         ('espacio', ''),
         ('rol', 'Música y Efectos de Sonido'),
@@ -737,6 +821,13 @@ class UIManager:
         ('nombre', 'Pantalla de Carga - Louis Mogollón'),
         ('nombre', 'Música alternativa - Gémini Lyria 3'),
         ('espacio', ''),
+        ('espacio', ''),
+
+        ('departamento', 'INTELIGENCIA ARTIFICIAL'),
+        ('rol', 'Desarrollo de Bots de IA'),
+        ('nombre', 'Louis Mogollón'),
+        ('rol', 'Entrenamiento y Aprendizaje por Refuerzo'),
+        ('nombre', 'Louis Mogollón'),
         ('espacio', ''),
 
         ('departamento', 'HERRAMIENTAS UTILIZADAS DURANTE EL DESARROLLO'),
@@ -770,7 +861,7 @@ class UIManager:
     ]
 
     # Duración total del scroll de créditos, en segundos.
-    CREDITOS_DURACION_SEGUNDOS = 180
+    CREDITOS_DURACION_SEGUNDOS = 175
 
     def _construir_lineas_creditos(self):
         """
@@ -784,10 +875,10 @@ class UIManager:
         if getattr(self, "_creditos_lineas_cache_key", None) == cache_key:
             return self._creditos_lineas_cache
 
-        fuente_departamento = self.get_font(max(24, int(self.SCREEN_HEIGHT * 0.045)))
-        fuente_tanda = self.get_font(max(28, int(self.SCREEN_HEIGHT * 0.055)))
-        fuente_rol = self.get_font(max(18, int(self.SCREEN_HEIGHT * 0.028)))
-        fuente_nombre = self.get_font(max(16, int(self.SCREEN_HEIGHT * 0.024)))
+        fuente_departamento = self.get_font2(max(24, int(self.SCREEN_HEIGHT * 0.045)))
+        fuente_tanda = self.get_font2(max(28, int(self.SCREEN_HEIGHT * 0.055)))
+        fuente_rol = self.get_font2(max(18, int(self.SCREEN_HEIGHT * 0.028)))
+        fuente_nombre = self.get_font2(max(16, int(self.SCREEN_HEIGHT * 0.024)))
 
         lineas = []
         for tipo, texto in self.CREDITOS_CONTENIDO:
@@ -838,6 +929,7 @@ class UIManager:
         if transcurrido_seg >= self.CREDITOS_DURACION_SEGUNDOS:
             # Los créditos terminaron de desplazarse solos: vuelve al menú.
             self.current_screen = "main"
+            pygame.mixer.music.load(resource_path(os.path.join(self.ASSETS_PATH, "sonido", "musica_fondo.mp3")))
             return MENU_MOUSE_POS
 
         desplazamiento = velocidad_px_seg * transcurrido_seg
@@ -885,13 +977,13 @@ class UIManager:
         MENU_MOUSE_POS = pygame.mouse.get_pos()
 
         # --- Título "Sala de Bots" ---
-        title_font = self.get_font(55)
+        title_font = self.get_font2(55)
         title_surf = title_font.render("Sala de Bots", True, "#d7fcd4")
         title_rect = title_surf.get_rect(center=(self.SCREEN_WIDTH // 2, int(self.SCREEN_HEIGHT * 0.12)))
         self.SCREEN.blit(title_surf, title_rect)
 
         # --- Barra de input para el nombre del jugador ---
-        label_font = self.get_font(24)
+        label_font = self.get_font2(24)
         label_surf = label_font.render("Tu nombre:", True, "#d7fcd4")
         ib_w, ib_h = self._s(320), self._s(44)
         input_x = self.SCREEN_WIDTH // 2 - ib_w // 2
@@ -911,7 +1003,7 @@ class UIManager:
         louis_center = (self.SCREEN_WIDTH // 2 - gap // 2 - frame_w // 2, center_y)
         gen_center = (self.SCREEN_WIDTH // 2 + gap // 2 + frame_w // 2, center_y)
 
-        name_font = self.get_font(26)
+        name_font = self.get_font2(26)
 
         self.bot_room_louis_rect = pygame.Rect(0, 0, frame_w, frame_h)
         self.bot_room_louis_rect.center = louis_center
@@ -980,8 +1072,8 @@ class UIManager:
         btn_si = pygame.Rect(x + self._s(80), y + self._s(160), btn_w, btn_h)
         btn_no = pygame.Rect(x + w - btn_w - self._s(80), y + self._s(160), btn_w, btn_h)
 
-        font_title = self.get_font(34)
-        font_text = self.get_font(20)
+        font_title = self.get_font2(34)
+        font_text = self.get_font2(20)
 
         while True:
             for ev in pygame.event.get():
@@ -1631,7 +1723,7 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
             image=self.volver_img,
             pos=(self.SCREEN_WIDTH//2, box_y + box_h + self._s(40)),
             text_input="",
-            font=self.get_font(50),
+            font=self.get_font2(50),
             base_color="White",
             hovering_color="Green",
             size=(self._s(250), self._s(110))
@@ -1663,7 +1755,7 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
             cuadro_surf = pygame.transform.scale(self.cuadro_img, (box_w + self._s(100), box_h + self._s(100)))
             self.SCREEN.blit(cuadro_surf, (self.SCREEN_WIDTH//2 - box_w//2 - self._s(60), box_y - self._s(50)))
 
-            options_text = self.get_font(45).render("Reglas de Rummy 500", True, "White")
+            options_text = self.get_font2(45).render("Reglas de Rummy 500", True, "White")
             options_rect = options_text.get_rect(center=(self.SCREEN_WIDTH//2, self._s(100)))
             bg_rect = options_rect.inflate(self._s(40), self._s(18))
             pygame.draw.rect(self.SCREEN, (80, 80, 80), bg_rect, border_radius=6)
@@ -1823,7 +1915,7 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
                         self.current_screen = "credits"
                         self._creditos_inicio_ticks = pygame.time.get_ticks()
                         pygame.mixer.music.load(resource_path(os.path.join(self.ASSETS_PATH, "sonido", "creditos.mp3")))
-                        pygame.mixer.music.play(-1)
+                        pygame.mixer.music.play(1)
                     elif self.SALIR_BUTTON.checkForInput(event.pos):
                         self.play_click()
                         if self.confirm_exit():
@@ -2282,8 +2374,8 @@ Cómo ganar: El último jugador en acumular menos de 500 puntos gana la partida.
         btn_si = pygame.Rect(x + self._s(80), y + self._s(160), btn_w, btn_h)
         btn_no = pygame.Rect(x + w - btn_w - self._s(80), y + self._s(160), btn_w, btn_h)
 
-        font_title = self.get_font(38)
-        font_text = self.get_font(20)
+        font_title = self.get_font2(38)
+        font_text = self.get_font2(20)
 
         while True:
             for ev in pygame.event.get():

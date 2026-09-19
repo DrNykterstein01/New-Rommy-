@@ -39,19 +39,27 @@ pygame.init()
 
 icon = pygame.image.load(resource_path("assets/icon.png"))  # Reemplaza con la ruta correcta a tu imagen
 pygame.display.set_icon(icon)
-screen = pygame.display.set_mode((800, 600))
-pygame.display.set_caption("RUMMY 500")
 
+# Si ya existe una ventana (normalmente sí: main.py/ui.py ya crearon una
+# antes de llegar acá), la reutilizamos tal cual -tamaño, maximizada o
+# no, lo que sea- en vez de forzar un tamaño fijo con set_mode(), que es
+# lo que hacía que la ventana "saltara" de tamaño (y perdiera el estado
+# maximizado) al entrar a la partida. Solo si por algún motivo no hay
+# ninguna ventana todavía, se crea una con un tamaño por defecto.
+_surf_existente = pygame.display.get_surface()
+if _surf_existente is not None:
+    screen = _surf_existente
+    WIDTH, HEIGHT = screen.get_size()
+else:
+    WIDTH, HEIGHT = 1200, 800
+    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+pygame.display.set_caption("Rummy 500 - Layout Base")
 
 mensaje_orden = ""
 tiempo_inicio_orden = 0
 
 # ── Ordenamiento de mano ──────────────────────────────────────────────────────
 modo_orden = "Sets"   # Alterna entre 'Sets' (Tríos) y 'Runs' (Escaleras)
-
-WIDTH, HEIGHT = 1200, 800
-screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-pygame.display.set_caption("Rummy 500 - Layout Base")
 
 # Cargar fondo
 ASSETS_PATH = resource_path("assets")
@@ -120,6 +128,130 @@ def ruta_asset_modo(nombre_archivo, carpeta=None):
             if os.path.exists(ruta_bw):
                 return ruta_bw
     return os.path.join(base_dir, nombre_archivo)
+
+# --- Dificultad del encuentro oculto: cartas iniciales "de regalo" para Gaster ---
+# No toca la lógica de bajarse en absoluto: solo, al repartir las cartas de
+# cada ronda, le garantiza a Gaster ciertas cartas específicas en su mano
+# inicial (moviéndolas desde el mazo o, si hace falta, desde la mano de
+# otro jugador a cambio de una carta de relleno), para que la IA tenga
+# ventaja desde el arranque de la ronda.
+VALORES_SEGUROS_SEGUIDILLA = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+VALORES_TRIO = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+TIPOS_CARTA = ["♥", "♦", "♣", "♠"]
+
+def _es_joker(c):
+    return bool(getattr(c, "joker", False))
+
+def _criterio_joker():
+    return lambda c: _es_joker(c)
+
+def _criterio_carta(valor, tipo):
+    return lambda c: (not _es_joker(c)) and getattr(c, "value", None) == valor and getattr(c, "type", None) == tipo
+
+def _buscar_y_sacar_carta(criterio, round_obj, jugadores):
+    """
+    Busca la carta REAL (nunca crea una nueva, para no duplicar cartas en
+    el mazo) que cumpla `criterio`: primero en el mazo (round_obj.pile),
+    después en la mano de cada jugador de `jugadores`. Si la encuentra, la
+    quita de donde estaba (mazo y/o round_obj.hands) y la devuelve junto
+    con el jugador dueño (None si venía del mazo).
+    """
+    for c in list(round_obj.pile):
+        if criterio(c):
+            round_obj.pile.remove(c)
+            return c, None
+    for j in jugadores:
+        for c in list(j.playerHand):
+            if criterio(c):
+                j.playerHand.remove(c)
+                mano_round = getattr(round_obj, "hands", {}).get(j.playerId)
+                if mano_round is not None and mano_round is not j.playerHand and c in mano_round:
+                    mano_round.remove(c)
+                return c, j
+    return None, None
+
+def _forzar_carta_en_mano(jugador_objetivo, criterio, round_obj, otros_jugadores, saltar_chequeo=False):
+    """
+    Si `jugador_objetivo` todavía no tiene una carta que cumpla `criterio`,
+    la busca (mazo u otra mano) y se la da, devolviendo a cambio una carta
+    de relleno suya (nunca un Joker) a donde salió la carta buscada, para
+    no alterar el tamaño de ninguna mano ni el total de cartas en juego.
+    `saltar_chequeo=True` fuerza la búsqueda sin mirar si ya tiene una que
+    cumpla el criterio -necesario para pedir, por ejemplo, un SEGUNDO
+    Joker, ya que el criterio de "es un Joker" no distingue cuántos hacen
+    falta-.
+    """
+    import random
+    if not saltar_chequeo and any(criterio(c) for c in jugador_objetivo.playerHand):
+        return True
+
+    carta, origen = _buscar_y_sacar_carta(criterio, round_obj, otros_jugadores)
+    if carta is None:
+        print("[GASTER] No se encontró una carta disponible para forzar la ventaja de esta ronda; se omite.")
+        return False
+
+    rellenos = [c for c in jugador_objetivo.playerHand if not _es_joker(c)]
+    relleno = random.choice(rellenos) if rellenos else None
+    if relleno is not None:
+        jugador_objetivo.playerHand.remove(relleno)
+        mano_round_obj = getattr(round_obj, "hands", {}).get(jugador_objetivo.playerId)
+        if mano_round_obj is not None and mano_round_obj is not jugador_objetivo.playerHand and relleno in mano_round_obj:
+            mano_round_obj.remove(relleno)
+
+        if origen is None:
+            round_obj.pile.append(relleno)
+            random.shuffle(round_obj.pile)
+        else:
+            origen.playerHand.append(relleno)
+            mano_round_origen = getattr(round_obj, "hands", {}).get(origen.playerId)
+            if mano_round_origen is not None and mano_round_origen is not origen.playerHand:
+                mano_round_origen.append(relleno)
+
+    jugador_objetivo.playerHand.append(carta)
+    mano_round_destino = getattr(round_obj, "hands", {}).get(jugador_objetivo.playerId)
+    if mano_round_destino is not None and mano_round_destino is not jugador_objetivo.playerHand:
+        mano_round_destino.append(carta)
+    return True
+
+def aplicar_ventaja_inicial_gaster(gaster, otros_jugadores, round_obj, numero_ronda):
+    """
+    Le da a Gaster, al repartir las cartas de cada ronda, una ventaja fija
+    en su mano inicial (sin tocar para nada la lógica de cuándo/cómo puede
+    bajarse):
+      - Ronda 1: 2 Jokers.
+      - Ronda 2: una seguidilla de 4 cartas (palo y valores al azar).
+      - Ronda 3: un trío (valor al azar) + 1 Joker.
+      - Ronda 4: 1 Joker + un trío (valor al azar).
+    """
+    import random
+    try:
+        if numero_ronda == 1:
+            jokers_actuales = sum(1 for c in gaster.playerHand if _es_joker(c))
+            faltantes = max(0, 2 - jokers_actuales)
+            for _ in range(faltantes):
+                _forzar_carta_en_mano(gaster, _criterio_joker(), round_obj, otros_jugadores, saltar_chequeo=True)
+
+        elif numero_ronda == 2:
+            tipo = random.choice(TIPOS_CARTA)
+            inicio = random.randint(0, len(VALORES_SEGUROS_SEGUIDILLA) - 4)
+            valores = VALORES_SEGUROS_SEGUIDILLA[inicio:inicio + 4]
+            if sum(1 for c in gaster.playerHand if _es_joker(c)) == 0:
+                _forzar_carta_en_mano(gaster, _criterio_joker(), round_obj, otros_jugadores, saltar_chequeo=True)
+            for valor in valores:
+                _forzar_carta_en_mano(gaster, _criterio_carta(valor, tipo), round_obj, otros_jugadores)
+
+        elif numero_ronda in (3, 4):
+            valor_trio = random.choice(VALORES_TRIO)
+            tipos_trio = random.sample(TIPOS_CARTA, 3)
+            for tipo in tipos_trio:
+                _forzar_carta_en_mano(gaster, _criterio_carta(valor_trio, tipo), round_obj, otros_jugadores)
+            if sum(1 for c in gaster.playerHand if _es_joker(c)) == 0:
+                _forzar_carta_en_mano(gaster, _criterio_joker(), round_obj, otros_jugadores, saltar_chequeo=True)
+
+        print(f"[GASTER] Ventaja inicial de la ronda {numero_ronda} aplicada a {gaster.playerName}.")
+        print(f"Mano de W.D Gaster: {[str(c) for c in gaster.playerHand]}")
+    except Exception as e:
+        print(f"[GASTER] No se pudo aplicar la ventaja inicial de la ronda {numero_ronda} ({e}). Se continúa sin ella.")
 
 # --- Fondo del encuentro oculto (estático, blanco y negro) --------------
 def cargar_fondo_juego(width, height):
@@ -211,6 +343,7 @@ mazo_descarte = []  # Lista para el mazo de descarte
 mostrar_boton_descartar = False
 mostrar_boton_bajarse = False
 mostrar_boton_comprar = False
+cont_turnos = 0  # Cuenta los descartes válidos de cada ronda
 
 # guarda la última carta tomada y por quién (para impedir descartarla en el mismo turno)
 last_taken_card = None
@@ -522,7 +655,7 @@ def _descarte_es_genuinamente_util(bot, carta):
                 continue
     return False
 
-def _debe_saltar_ciclo_compra(players, mazo_descarte):
+def _debe_saltar_ciclo_compra(players, mazo_descarte, cont):
     """
     Con exactamente 2 jugadores activos, la compra solo puede ocurrir
     lógicamente en el primerísimo turno de la ronda (cuando el tope del
@@ -535,7 +668,7 @@ def _debe_saltar_ciclo_compra(players, mazo_descarte):
     mazo. Con 3+ jugadores activos, el ciclo de compra se deja tal cual.
     """
     activos = [p for p in players if not getattr(p, "isSpectator", False)]
-    return len(activos) == 2 and len(mazo_descarte) > 1
+    return len(activos) == 2 and len(mazo_descarte) >= 1 and cont > 0
 
 def _carta_ayuda_a_otro_jugador(bot_en_turno, carta, players):
     """
@@ -1541,6 +1674,17 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
     global last_taken_card, last_taken_player
     global MODO_OCULTO_GASTER
     global fondo_img
+    global cont_turnos
+
+    # Re-sincronizar con el tamaño ACTUAL de la ventana al empezar la
+    # partida (por si cambió mientras se estaba en el menú principal desde
+    # la última vez que se llamó a main() -el módulo ui2 solo se importa
+    # una vez por proceso, así que sin esto podían quedar valores viejos-).
+    # Nunca se fuerza un tamaño nuevo, solo se lee el que ya hay.
+    _surf_actual = pygame.display.get_surface()
+    if _surf_actual is not None:
+        screen = _surf_actual
+        WIDTH, HEIGHT = screen.get_size()
 
     # --- ENCUENTRO OCULTO: Gaster ---
     # Se recalcula en CADA llamada a main() a partir del network_manager
@@ -1812,7 +1956,48 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
 
     btn_salir_ganador = None
 
+    # ── Flag para la música de la pantalla de fin de partida ─────────────────
+    # Garantiza que 'musica_final.mp3' se cargue y reproduzca UNA sola vez al
+    # entrar en la fase "game_over". Sin esta flag, el bloque de esa fase
+    # (que corre una vez por frame) recargaba la canción constantemente y
+    # sonaba como un "bucle trabado" de apenas los primeros segundos.
+    # Al vivir dentro de main(), se reinicia sola en cada nueva partida.
+    musica_game_over_reproducida = False
+
+    # ── Pausa para "saborear" la última jugada antes de anunciar la ronda ────
+    # Cuando un jugador se queda sin cartas, en vez de saltar de inmediato a
+    # la pantalla de resultados, se espera un momento (con la mesa tal como
+    # quedó tras la última acción, más un mensaje de "es el ganador de la
+    # ronda") y solo después se pasa a la pantalla de fin de ronda.
+    pausa_fin_ronda_hasta = None
+    pausa_fin_ronda_destino = None
+    TIEMPO_PAUSA_FIN_RONDA = 1.5
+
+    # Encuentro oculto: si Gaster termina ganando la partida completa (el
+    # humano llega a 500 puntos), se reproduce su risa mientras se muestran
+    # los resultados finales de esa ronda, y el juego se cierra de golpe
+    # apenas terminan de mostrarse -en vez de pasar a la pantalla normal de
+    # "game_over"-.
+    partida_perdida_ante_gaster = False
+
     while running:
+        # Si ya se cumplió la pausa post-victoria de ronda, ahora sí se pasa
+        # a la pantalla de resultados.
+        if pausa_fin_ronda_hasta is not None and time.time() >= pausa_fin_ronda_hasta:
+            fase = pausa_fin_ronda_destino
+            fase_fin_tiempo = time.time()
+            pausa_fin_ronda_hasta = None
+            pausa_fin_ronda_destino = None
+
+            if MODO_OCULTO_GASTER and not partida_perdida_ante_gaster:
+                _activos_check = [p for p in players if not getattr(p, "isSpectator", False)]
+                if len(_activos_check) <= 1 and any(p.playerName == "W.D Gaster" for p in _activos_check):
+                    partida_perdida_ante_gaster = True
+                    try:
+                        pygame.mixer.Sound(resource_path("assets/sonido/gaster_laugh.mp3")).play()
+                    except Exception as e:
+                        print(f"[GASTER] No se pudo reproducir gaster_laugh.mp3 ({e}).")
+
         # --- SOLO FASE DE ELECCIÓN ---
         update_descartar_visibility(zona_cartas, roundThree, roundFour)
         update_comprar_visibility()
@@ -1973,6 +2158,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                     p.discarded = False       # ### NUEVO: Asegurar que discarded sea False
                     p.playerPass = False      # ### NUEVO: Asegurar que nadie haya "pasado"
                     p.playerBuy = False
+                cont_turnos = 0
                 # Inicializacion del mazo...
                 round = startRound(players, screen)[0]
                 print(f"deck para la ronda: {[str(c) for c in round.pile]}")
@@ -1982,6 +2168,18 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 deckForRound = round.pile
                 print(f"Las manos a repartir ...... ID: CARTAS")#{round.hands}")
                 network_manager.dprint(round.hands)
+
+                # --- ENCUENTRO OCULTO: ventaja inicial de mano para Gaster ---
+                if MODO_OCULTO_GASTER:
+                    _gaster_jugador = next((p for p in players if getattr(p, "playerName", None) == "W.D Gaster"), None)
+                    if _gaster_jugador is not None:
+                        _numero_ronda_deal = 1 if roundOne else 2 if roundTwo else 3 if roundThree else 4
+                        aplicar_ventaja_inicial_gaster(
+                            _gaster_jugador,
+                            [p for p in players if p is not _gaster_jugador],
+                            round,
+                            _numero_ronda_deal
+                        )
                 # Enviar orden a todos
                 
                 # PARA PRUEBA...
@@ -2467,7 +2665,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
         # resto del juego (y con otros clientes reales, si los hubiera) no
         # cambie en nada.
         # ============================================================
-        if network_manager.is_host and fase in ("ronda1", "ronda2", "ronda3", "ronda4"):
+        if network_manager.is_host and pausa_fin_ronda_hasta is None and fase in ("ronda1", "ronda2", "ronda3", "ronda4"):
             bot_en_turno = next(
                 (p for p in players
                  if hasattr(p, "decide_draw_source")
@@ -2602,7 +2800,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                     }
                     waiting = True
                     time_waiting = time.time()
-                    saltar_compra = _debe_saltar_ciclo_compra(players, mazo_descarte)
+                    saltar_compra = _debe_saltar_ciclo_compra(players, mazo_descarte, cont_turnos)
                     if saltar_compra:
                         # 2 jugadores activos y ya no es el primer turno de la
                         # ronda: nadie puede comprar de todas formas (ver
@@ -2896,6 +3094,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                             players[idx].cardDrawn = False
                             players[idx].discarded = False
 
+                        cont_turnos += 1
                         msgDescarte = {
                             "type": "DESCARTE",
                             "cartas_descartadas": cartas_descartadas_bot,
@@ -3191,38 +3390,45 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                     elif resultado == "exit":
                         # ---> NUEVA INTERCEPCIÓN DE CONFIRMACIÓN <---
                         # Desplegamos la ventana que creamos en el Paso 1
-                        quiere_salir = show_exit_confirmation_modal(screen, WIDTH, HEIGHT, ASSETS_PATH)
-                        
-                        if not quiere_salir:
-                            continue  # Canceló la salida, volvemos al bucle del juego normal sin cerrar nada
-                        
-                        # Si aceptó salir ("SI"), procede con la lógica de desconexión por red.
-                        running = False
-                        print(f" Jugador antes de salir {jugador_local.playerName}")
-                        pygame.mixer.music.load(resource_path("assets/sonido/musica_fondo.mp3"))
-                        pygame.mixer.music.play(-1)
-
-                        if network_manager.is_host:
-                            msgHostLeft = {
-                                "type": "DESCONEXION",
-                                "playerId": network_manager.player_id,
-                                "playerName": network_manager.playerName,
-                                "reason": "HOST_LEFT"
-                            }
-                            network_manager.broadcast_message(msgHostLeft)
-                            network_manager.stop()
+                        if MODO_OCULTO_GASTER:
+                            interferencia1 = pygame.mixer.Sound(resource_path("assets/sonido/error.mp3"))
+                            interferencia2 = pygame.mixer.Sound(resource_path("assets/sonido/interferencia.mp3"))
+                            interferencia1.play()
+                            interferencia2.play()
                         else:
-                            msgSalir = {
-                                "type": "SALIR",
-                                "playerId": jugador_local.playerId,
-                                "playerName": jugador_local.playerName
-                            }
-                            if network_manager.player:
-                                network_manager.sendData(msgSalir)
-                            network_manager.stop()
+                            quiere_salir = show_exit_confirmation_modal(screen, WIDTH, HEIGHT, ASSETS_PATH)
+                            
+                            if not quiere_salir:
+                                continue  # Canceló la salida, volvemos al bucle del juego normal sin cerrar nada
+                            
+                            else:
+                                # Si aceptó salir ("SI"), procede con la lógica de desconexión por red.
+                                running = False
+                                print(f" Jugador antes de salir {jugador_local.playerName}")
+                                pygame.mixer.music.load(resource_path("assets/sonido/musica_fondo.mp3"))
+                                pygame.mixer.music.play(-1)
 
-                        time.sleep(2)
-                        return
+                                if network_manager.is_host:
+                                    msgHostLeft = {
+                                        "type": "DESCONEXION",
+                                        "playerId": network_manager.player_id,
+                                        "playerName": network_manager.playerName,
+                                        "reason": "HOST_LEFT"
+                                    }
+                                    network_manager.broadcast_message(msgHostLeft)
+                                    network_manager.stop()
+                                else:
+                                    msgSalir = {
+                                        "type": "SALIR",
+                                        "playerId": jugador_local.playerId,
+                                        "playerName": jugador_local.playerName
+                                    }
+                                    if network_manager.player:
+                                        network_manager.sendData(msgSalir)
+                                    network_manager.stop()
+
+                                time.sleep(2)
+                                return
 
                 elif nombre:
                     if nombre == "Tomar carta":
@@ -3238,7 +3444,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                             bought = True
                             waiting = True
                             time_waiting = time.time()
-                            saltar_compra = _debe_saltar_ciclo_compra(players, mazo_descarte)
+                            saltar_compra = _debe_saltar_ciclo_compra(players, mazo_descarte, cont_turnos)
                             if saltar_compra:
                                 # Mismo caso que para el bot: con 2 jugadores
                                 # activos y ya pasado el primer turno de la
@@ -3346,9 +3552,9 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                                 #cardTakenInDiscards.append(cardTakenD)
                                 actualizar_indices_visual_hand(visual_hand)
                                 #reiniciar_visual(jugador_local, visual_hand, cuadros_interactivos, cartas_ref)
-                                print(f"Carta tomada: {str(cardTakenD)}")
-                                print(f"Mano del jugador al tomar la carta: {[str(c) for c in jugador_local.playerHand]}")
-                                print(f"Mano visual: {[str(c) for c in visual_hand]}")
+                                #print(f"Carta tomada: {str(cardTakenD)}")
+                                #print(f"Mano del jugador al tomar la carta: {[str(c) for c in jugador_local.playerHand]}")
+                                #print(f"Mano visual: {[str(c) for c in visual_hand]}")
                                 jugador_local.cardDrawn = True
                                 organizar_habilitado = True
                                 #cartas_ocultas.clear()
@@ -3951,6 +4157,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                                     players[idx].cardDrawn = False
                                     players[idx].discarded = False
 
+                                cont_turnos += 1
                                 msgDescarte = {
                                     "type": "DESCARTE",
                                     "cartas_descartadas": cartas_descartadas,
@@ -3974,7 +4181,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
 
                                 jugador_mano_actual = [p for p in players if p.isHand][0] # Encontramos al jugador MANO actualmente
                             
-                                print(f"MANO actual: {jugador_mano_actual}")
+                                #print(f"MANO actual: {jugador_mano_actual}")
                                 print(f"Valor de playerPass del MANO: {jugador_mano_actual.playerPass}")
                                 if jugador_mano_actual.playerPass: # Verificamos el valor de "playerPass", para saber si la compra esta permitida.
 
@@ -4052,7 +4259,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                                             elif roundThree or roundFour:
                                                 numero = 3
                                             zona_cartas[numero] = [] # Limpiamos la zona de descartes.
-                                            print(f"Mano del jugador que compro: {jugador_local.playerHand}")
+                                            #print(f"Mano del jugador que compro: {jugador_local.playerHand}")
                                             
                                             # Asignamos una carta del mazo al MANO actual.
                                             cardTaken = drawCard(jugador_mano_actual, round, False)
@@ -4705,7 +4912,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                     elif roundThree or roundFour:
                         numero = 3
                     zona_cartas[numero] = [] # Limpiamos la zona de descartes.
-                    print(f"Mano del jugador que compro: {jugador_local.playerHand}")
+                    #print(f"Mano del jugador que compro: {jugador_local.playerHand}")
 
                     # Asignamos una carta del mazo al MANO actual.
                     cardTaken = drawCard(jugador_mano_actual, round, False)
@@ -6382,7 +6589,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
             continue
 
         # --- DETECTAR FIN DE RONDA ---
-        if fase == "ronda1":    # Puede quedarse "juego"  :)
+        if fase == "ronda1" and pausa_fin_ronda_hasta is None:    # Puede quedarse "juego"  :)
             for jugador in players:
                 if not getattr(jugador, "isSpectator", False): 
                     if hasattr(jugador, "playerHand") and len(jugador.playerHand) == 0:
@@ -6397,16 +6604,17 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                             pygame.mixer.music.fadeout(4000)
                             pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
-                            # Pequeña pausa para que la voz de la última acción
-                            # del bot (fin de turno / inserción / etc.) no se
-                            # encime con la voz de "ganador".
                             pygame.time.wait(1000)
                             voz_winner1.play()
-                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "Gaster"):
+                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "W.D Gaster"):
                             pygame.time.wait(1000)
                             voz_winner.play()
-                        fase = "fin1"
-                        fase_fin_tiempo = time.time()
+                        mensaje_temporal = f"{jugador.playerName} es el ganador de la ronda"
+                        mensaje_tiempo = time.time()
+                        for p in players:
+                            p.isHand = False
+                        pausa_fin_ronda_hasta = time.time() + TIEMPO_PAUSA_FIN_RONDA
+                        pausa_fin_ronda_destino = "fin1"
                         break
 
         # --- FASE DE FIN ---
@@ -6436,6 +6644,10 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 # Comprobar si terminó el juego
                 active_players = [p for p in players if not getattr(p, "isSpectator", False)]
                 if len(active_players) <= 1:
+                    if partida_perdida_ante_gaster:
+                        # Cierre abrupto: Gaster ganó la partida completa.
+                        pygame.quit()
+                        sys.exit()
                     fase = "game_over"
                 else:
                     fase = "eleccion"
@@ -6450,7 +6662,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                             pygame.mixer.music.play(-1)
             continue
         
-        if fase == "ronda2":
+        if fase == "ronda2" and pausa_fin_ronda_hasta is None:
             for jugador in players:
                 if not getattr(jugador, "isSpectator", False):
                     if hasattr(jugador, "playerHand") and len(jugador.playerHand) == 0:
@@ -6459,18 +6671,22 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         aplausos_sound_path = os.path.join(ASSETS_PATH, "sonido", "aplauso.wav")
                         aplausos_sound = pygame.mixer.Sound(aplausos_sound_path)
                         aplausos_sound.play()
-                        if not MODO_OCULTO_GASTER:
+                        if not MODO_OCULTO_GASTER or any(hasattr(p, "is_ai") and p.playerName != "W.D Gaster" for p in players):
                             # La música de Gaster ('oculto.mp3') nunca se detiene.
                             pygame.mixer.music.fadeout(4000)
                             pygame.mixer.music.stop()
                         if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
                             voz_winner2.play()
-                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "Gaster"):
+                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "W.D Gaster"):
                             pygame.time.wait(1000)
                             voz_winner.play()
-                        fase = "fin2"
-                        fase_fin_tiempo = time.time()
+                        mensaje_temporal = f"{jugador.playerName} es el ganador de la ronda"
+                        mensaje_tiempo = time.time()
+                        for p in players:
+                            p.isHand = False
+                        pausa_fin_ronda_hasta = time.time() + TIEMPO_PAUSA_FIN_RONDA
+                        pausa_fin_ronda_destino = "fin2"
                         break
         
         if fase == "fin2":
@@ -6498,6 +6714,9 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 if time.time() - fase_fin_tiempo >= 7:
                     active_players = [p for p in players if not getattr(p, "isSpectator", False)]
                     if len(active_players) <= 1:
+                        if partida_perdida_ante_gaster:
+                            pygame.quit()
+                            sys.exit()
                         fase = "game_over"
                     else:
                         fase = "eleccion"
@@ -6512,7 +6731,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                             pygame.mixer.music.play(-1)
                 continue
 
-        if fase == "ronda3":
+        if fase == "ronda3" and pausa_fin_ronda_hasta is None:
             for jugador in players:
                 if not getattr(jugador, "isSpectator", False):
                     if hasattr(jugador, "playerHand") and len(jugador.playerHand) == 0:
@@ -6528,11 +6747,15 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
                             voz_winner3.play() 
-                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "Gaster"):
+                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "W.D Gaster"):
                             pygame.time.wait(1000)
                             voz_winner.play()                   
-                        fase = "fin3"
-                        fase_fin_tiempo = time.time()
+                        mensaje_temporal = f"{jugador.playerName} es el ganador de la ronda"
+                        mensaje_tiempo = time.time()
+                        for p in players:
+                            p.isHand = False
+                        pausa_fin_ronda_hasta = time.time() + TIEMPO_PAUSA_FIN_RONDA
+                        pausa_fin_ronda_destino = "fin3"
                         break
 
         if fase == "fin3":
@@ -6560,6 +6783,9 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 if time.time() - fase_fin_tiempo >= 7:
                     active_players = [p for p in players if not getattr(p, "isSpectator", False)]
                     if len(active_players) <= 1:
+                        if partida_perdida_ante_gaster:
+                            pygame.quit()
+                            sys.exit()
                         fase = "game_over"
                     else:
                         fase = "eleccion"
@@ -6574,7 +6800,7 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                                 pygame.mixer.music.play(-1)
                 continue
 
-        if fase == "ronda4":
+        if fase == "ronda4" and pausa_fin_ronda_hasta is None:
             for jugador in players:
                 if not getattr(jugador, "isSpectator", False):
                     if hasattr(jugador, "playerHand") and len(jugador.playerHand) == 0:
@@ -6591,11 +6817,15 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                         if hasattr(jugador, "is_ai") and jugador.playerName == "LouisBot":
                             pygame.time.wait(1000)
                             voz_winner3.play()
-                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "Gaster"):
+                        elif hasattr(jugador, "is_ai") and jugador.playerName in ("GeniBot", "W.D Gaster"):
                             pygame.time.wait(1000)
                             voz_winner.play()
-                        fase = "fin4"
-                        fase_fin_tiempo = time.time()
+                        mensaje_temporal = f"{jugador.playerName} es el ganador de la ronda"
+                        mensaje_tiempo = time.time()
+                        for p in players:
+                            p.isHand = False
+                        pausa_fin_ronda_hasta = time.time() + TIEMPO_PAUSA_FIN_RONDA
+                        pausa_fin_ronda_destino = "fin4"
                         break
         if fase == "fin4":
                 for event in pygame.event.get():
@@ -6622,6 +6852,9 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 if time.time() - fase_fin_tiempo >= 7:
                     active_players = [p for p in players if not getattr(p, "isSpectator", False)]
                     if len(active_players) <= 1:
+                        if partida_perdida_ante_gaster:
+                            pygame.quit()
+                            sys.exit()
                         fase = "game_over"
                     else:
                         fase = "eleccion"
@@ -6637,6 +6870,19 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
                 continue
 
         if fase == "game_over":
+                # ── FIX DEL BUG AUDITIVO ─────────────────────────────────────
+                # Este bloque se ejecuta UNA VEZ POR FRAME del bucle principal.
+                # Antes, load() + play() corrían en cada frame, así que pygame
+                # recargaba la canción y la reiniciaba desde cero constantemente
+                # (~60 veces por segundo): por eso solo se escuchaba una mínima
+                # fracción del inicio en un "bucle" infinito.
+                # Ahora la música se reproduce UNA sola vez, la primera vez que
+                # se entra en la fase "game_over".
+                if not musica_game_over_reproducida:
+                    pygame.mixer.music.load(resource_path("assets/sonido/musica_final.mp3"))
+                    pygame.mixer.music.play(-1)  # Reproducir en bucle
+                    musica_game_over_reproducida = True
+                # ──────────────────────────────────────────────────────────────
                 salir_click = False
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -6738,8 +6984,8 @@ def main(manager_de_red, bots_precargados=None): # <-- Acepta el manager de red 
     # Al salir del bucle del juego (partida terminada o "Salir" a mitad de
     # partida) se apaga el modo Gaster inmediatamente: si no, la fuente
     # Wingdings y el resto de la skin oculta se quedarían pegadas en el
-    # menú principal hasta la próxima partida.
-    #globalMODO_OCULTO_GASTER
+    # menú principal hasta la próxima partida. (MODO_OCULTO_GASTER ya está
+    # declarada global al principio de esta función.)
     MODO_OCULTO_GASTER = False
     return
 
@@ -6979,14 +7225,14 @@ def mostrar_ganador_final(screen, fondo_img, players, WIDTH, HEIGHT, ASSETS_PATH
         p_name = getattr(p, "playerName", "???")
         p_pts = getattr(p, "playerPoints", 0)
         is_spec = getattr(p, "isSpectator", False)
-        linea = f"{i+1}o {p_name}: {p_pts} pts"
+        linea = f"{i+1}) {p_name}: {p_pts} pts"
         if is_spec: linea += " (Expulsado)"
         
         color = (255, 255, 255) if p == ganador else (180, 180, 180)
         r_surf = ranking_font.render(linea, True, color)
         screen.blit(r_surf, (center_x - r_surf.get_width()//2, start_y_ranking + i * 35))
 
-    msg_final = "Gracias por jugar Rummy 500"
+    msg_final = "Gracias por jugar Rommy 500"
     msg_surf = info_font.render(msg_final, True, (150, 150, 150))
     screen.blit(msg_surf, (center_x - msg_surf.get_width()//2, y_rect + alto_rect - 30))
 
